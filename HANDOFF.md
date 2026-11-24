@@ -1,53 +1,48 @@
 # HANDOFF
 
-更新：2026-11-24 · 版本 v0.1.0（初始化 + 设计稿）· Claude Code
+更新：2026-11-24 · v0.2.0 已发版（tag `v0.2.0`）· Claude Code 审核
 
 ## 现在在哪
 
-v0.1.0 做完：仓库初始化好了，设计稿 `docs/design.md` 可以交给 Codex。**v0.2.0 等站主看过设计稿和 `ROADMAP.md` 的 Phase 计划再开工。**
+v0.2.0（本机读取）完成：Codex 实施 Phase 1–5，Claude 审核、改进、实测、提交、打 tag。下一步是 v0.3.0（Vision 本机 OCR + Mathpix），Phase 计划等站主答了决策点再写进 `ROADMAP.md`。
 
-站主这轮定的（ASK，记在 `docs/decisions/0001`、`0002`）：照 brief 由 Codex 实施、Claude 审核；1.0.0 = 引擎 + 三个 App 都接上；App 用 GitHub 仓库 + tag 引用。
+## 这轮审核改了什么
 
-## 本轮做了什么
-
-- `git init`（`main`）；`.gitignore`；`.claude/settings.json`（关掉 Claude Code 的默认署名）。
-- `CLAUDE.md`（规则：开工前、分工、版本、Git、边界、工程约定、文档）；`AGENTS.md` → `CLAUDE.md` 软链接。
-- `docs/design.md`：回答 brief 的五个问题（接口、原生复用、Mathpix 交界、三个 App 的迁移、验收），带 Peck 调用示例，收尾写了第一步和要用样本验的事。
-- `docs/decisions/0001–0004`：分工与版本、git tag 引用、objc2 进程内调用、Mathpix 交界。
-- `ROADMAP.md`：v0.1.0 → v1.0.0 的版本表、v0.2.0 的 5 个 Phase、之后版本的大纲、用户验收清单。
-- `README.md`、`CHANGELOG.md`、`THIRD_PARTY.md`。
-- `Cargo.toml` + `src/lib.rs`：只有 `VERSION` 和一个版本测试的空壳（v0.2.0 起才写接口）。
-- `brief.md` 移到 `docs/brief.md`，内容没改。
-
-核对过的现有实现（只读）：Peck `harness/tools/pdf.rs`、`gateway/mathpix.rs`、`harness/loop.rs::ocr_job`；Pith `research/content.rs`、`concept/mathpix.rs`、`concept/commands.rs`、`crates/concept-engine/src/mathpix.rs`、`src/reader/controller.ts`；Pomelo `youzi/pdf.rs`、`youzi/files.rs`、`youzi/office.rs`、`pub2md/mathpix.rs`、`pub2md/job.rs`。结论写在 design §0。
+- **短文字不丢**：原来只有几个字的页（标题页、只有页码的页、一句话的幻灯片）被判成 `NoText` / `Blank`，那几个字直接丢掉。现在页面上除了这几个字别无他物的算 `Text`；有图形的算 `NoText`，字放在 `partial` 里交回。`Content::NoText` 从元组改成 `{ reason, partial }`。
+- **页图画 CropBox**：原来画 MediaBox（Peck、Pomelo 的老做法），知网等文件两者不同，页图会比阅读器里看到的多出边。
+- **文件头**：前面带杂字节的 PDF（PDFKit、Pith 都能开）原来被判成「不是 PDF」，现在容忍到 1024 字节。
+- **去掉还没用到的**：`Error::Ocr`、`Error::Mathpix`、`MathpixError` 留到 v0.3.0 按 design §3 再加。
+- **结构**：手写最小 PDF 的代码原来在样本生成器和测试里各一份，合成 `samples::raw_pdf`（App 的测试也能用）；集成测试按主题重排成 `tests/document.rs`、`tests/read.rs`（原来叫 phase34 / phase5）；`probe` 加 `--text`；公开接口补了文档注释。
+- **文档**：决策 0005–0007（页码错误、页序、灰度格式）是接口细节，并进 design §1 后删掉；design 的实测表、README、CHANGELOG、ROADMAP、CLAUDE.md（检查命令、测试命名）精简更新。
 
 ## 测试
 
-- `cargo test`：通过（1 个版本测试）。
-- `cargo clippy --all-targets -- -D warnings`：通过。
+- `./scripts/check.sh`：通过（两种配置的 `cargo test` + `cargo clippy -D warnings`；单元 10、`document` 6、`read` 4、文档测试 1）。
+- `cargo check --target aarch64-unknown-linux-gnu --all-targets`（开 / 不开 `samples`）：通过。
+- **真实文件**（`~/ResearchLab-test/zotero-copy` 28 篇 + Pith `local/` 2 篇，中英文、单双栏）：全部打开，535 页全是 `Text`、没有失败，每份 30–220 ms。**和 Peck 现在的 JXA 读法逐字比对 535 页完全一致**。中文知网、英文双栏的顺序看过，正常。
+- 页图：横向旋转页摆正、中文页清晰（人看过）；真实论文 1568px JPEG 约 40 ms/页。
+- 坏文件：截掉一半、截掉 10% → `Damaged`；只坏了尾部目录 → PDFKit 修好照常读；中间写进 4KB 乱码 → 能读（坏的那页内容可能不对，测不出来）。只设权限密码的 PDF 照常读。
 
-## 未完成 / 已知问题
+## 已知问题
 
-- 设计稿里的耗时（§2.5）、三个阈值（空白、乱码、字数）、OCR 字错率门槛都是估计，v0.2.0 / v0.3.0 用样本实测后改。
-- Vision 对两栏扫描的阅读顺序靠引擎自己排（§2.3），效果要样本验。
-- 真实 Mathpix 回应里 `\pagebreak` 和页数对不对得上（§3.4），v0.3.0 真跑一次才知道。
+- PDFKit 原样交出连字（`ﬀ`）、全角数字；个别字体的连字没有文字对照（XGBoost 论文里 `https` 读成 `hps`）。整理归 App，取不到的只能靠 OCR。
+- 这批真实文件里没有扫描件，`NoText` / `Blank` 只在生成样本上验过；v0.3.0 需要真实扫描件（见「等你」）。
 
 ## 等你
 
-1. **看设计稿、批 v0.2.0 的计划**：`docs/design.md`（重点 §1 接口、§3 Mathpix 交界）和 `ROADMAP.md`「v0.2.0」。有要改的直接说。
-2. **建 GitHub 远端并 push**：在 GitHub 建私有仓库 `elenskye/engine-pdf`（不要勾初始化 README），然后在本仓库跑：
+1. **push**：
 
    ```bash
-   git remote add origin https://github.com/elenskye/engine-pdf.git
+   git push origin main
    ```
 
    ```bash
-   git push -u origin main
+   git push origin v0.2.0
    ```
 
-3. **（v0.3.0 前，不急）真跑 Mathpix**：沿用 Pith 真跑时给过的那个密钥文件夹里的 mathpix 密钥；每版上限默认 $1，用的是样本第 8 页（每次 $0.005）。
+2. **回答 v0.3.0 的决策点**（本轮最后的提问）。
+3. （v0.3.0 用）**一两份真实扫描 PDF**：中文扫描书或论文的几页就够，放进 `local/`（不进 Git）。没有的话只用生成样本验 OCR。
 
-## 下一轮从哪开始
+## 下一轮
 
-- 站主批了计划后：让 Codex 照 `AGENTS.md` 做 **v0.2.0 Phase 1（骨架）**，接着 Phase 2（样本生成器）。可以这样交代 Codex：「读 AGENTS.md、HANDOFF.md、ROADMAP.md 和 docs/design.md §1、§2、§5.1，做 v0.2.0 Phase 1，做完照 AGENTS.md『汇报』写 HANDOFF」。
-- Codex 做完后回到 Claude：审核、跑 `cargo test` 和 `cargo clippy`、commit `v0.2.0: …`。
+站主答完决策点 → Claude 把 v0.3.0 的 Phase 表写进 `ROADMAP.md` → Codex 照 `AGENTS.md` 做 v0.3.0 Phase 1。

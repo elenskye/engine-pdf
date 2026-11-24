@@ -27,7 +27,7 @@ engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库�
 | 新增功能、大幅优化 | `0.2.0 → 0.3.0` | 先在 `ROADMAP.md` 写 Phase 计划，站主看过再做 | 只在最后一个 Phase 收尾时发；中间站主要求才发 |
 | 大版本 | `1.0.0 → 2.0.0` | 同上；升不升只由站主定 | 同上 |
 
-- **发版** = `cargo test` 和 `cargo clippy` 通过 → 更新 `CHANGELOG.md` → commit → 打 tag `v<版本>`（Claude 打）。push（含 `git push --tags`）由站主做。App 钉的是 tag，发出去的 tag 永远不改、不删。
+- **发版** = `./scripts/check.sh` 通过 → 更新 `CHANGELOG.md` → commit → 打 tag `v<版本>`（Claude 打）。push（含 `git push --tags`）由站主做。App 钉的是 tag，发出去的 tag 永远不改、不删。
 - App 怎么引用见 `decisions/0002`：`engine-pdf = { git = "https://github.com/elenskye/engine-pdf", tag = "v0.x.y" }`。
 
 ## Git
@@ -53,7 +53,8 @@ engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库�
 - 错误是 `Error` 枚举：App 能按种类分辨；`Display` 是一句简短中文，不带密钥、路径和服务原文。
 - `unsafe` 只在 `src/sys/`（原生调用）里，每处写清前提。每页一个 autorelease pool。
 - 引入第三方依赖登记 `THIRD_PARTY.md`（名称、版本、许可证、用途、链接），写成 `^x.y.z`。
-- 检查：`cargo test`（Mac 上跑，含真调 PDFKit、Vision 的测试）+ `cargo clippy --all-targets -- -D warnings`，每轮结束前必须通过。花钱的测试标 `#[ignore]`，手动跑。没有格式化配置，照周围写法排。
+- 检查：`./scripts/check.sh`（开 / 不开 `samples` 两种配置的 `cargo test` + `cargo clippy -D warnings`，Mac 上跑，含真调 PDFKit 的测试），每轮结束前必须通过。花钱的测试标 `#[ignore]`，手动跑。代码用 `cargo fmt` 排版。
+- 测试按主题放：单元测试跟着模块，集成测试在 `tests/<主题>.rs`（`document`、`read`…），不按 Phase 命名。
 
 ## 文档与风格
 

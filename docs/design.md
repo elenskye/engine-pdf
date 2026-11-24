@@ -1,6 +1,6 @@
-# engine-pdf 设计稿（v0.1.0）
+# engine-pdf 设计稿
 
-> 依据 `docs/brief.md`，2026-11-24 核对过三个 App 的现有代码。选型见 `docs/decisions/0001`–`0004`。本文交给 Codex 实施，按 `ROADMAP.md` 的 Phase 推进。
+> 依据 `docs/brief.md`，选型见 `docs/decisions/`。**v0.2.0 已实现本机部分**（§1 除 OCR、Mathpix，§2.1–2.2、2.4–2.5）；Vision OCR（§2.3）和 Mathpix（§3）是 v0.3.0 的设计；§4 是各 App 的接入计划。
 
 ## 0. 现状
 
@@ -29,8 +29,8 @@ engine_pdf
 ├── pages::parse      "3"、"1-5"、"1,3-4"、"4-" → 页码
 ├── Cancel            取消令牌（可克隆，跨线程）
 ├── Error             错误种类 + 一句中文
-├── mathpix           Quote（本地报价）→ run（上传识别）；分步 submit / wait / fetch / delete
-└── samples           （feature "samples"）测试样本生成器，App 的测试也能用
+├── mathpix           （v0.3.0）Quote（本地报价）→ run（上传识别）；分步 submit / wait / fetch / delete
+└── samples           （feature "samples"）测试样本生成器和手写最小 PDF 的 raw_pdf，App 的测试也能用
 ```
 
 ### 1.2 打开与错误
@@ -38,33 +38,38 @@ engine_pdf
 ```rust
 let doc = Document::open(path)?;        // 或 Document::from_bytes(&bytes)?（Pith、Pomelo 手里是字节）
 doc.page_count();                        // u32
-doc.label(8);                            // Option<String>：第 8 页印的页码（/PageLabels），如 "vi"、"3"
+doc.label(8);                            // Option<String>：第 8 页印的页码（/PageLabels），如 "vi"；没定义时 PDFKit 给 "8"
+doc.text(8)?;                            // String：PDFKit 原始文字层，扫描页为空字符串
+doc.render(8, ImageFormat::Png, 1568)?;   // Image：白底，画 CropBox（阅读器显示的范围），带旋转，最长边 1568 像素
+doc.image_counts(&cancel)?;              // Vec<(u32, usize)>：有图片资源的物理页和数量
+doc.split(&[8, 2, 8], &cancel)?;          // Vec<u8>：按指定顺序复制页面，允许重复
 ```
 
 `Error` 是枚举，App 按种类给提示；`Display` 是一句简短中文（不带路径、密钥、服务原文）：
 
 | 种类 | 什么时候 | `Display` |
 | --- | --- | --- |
-| `NotPdf` | 开头不是 `%PDF-` | 这不是 PDF 文件。 |
+| `NotPdf` | 前 1024 字节里没有 `%PDF-`（和 Acrobat、PDFKit 一样容忍前面的杂字节） | 这不是 PDF 文件。 |
 | `Damaged` | PDFKit 打不开 | 这份 PDF 已损坏，打不开。 |
 | `Locked` | `isLocked`（要密码） | 这份 PDF 加了密码，打不开。 |
 | `PageOutOfRange { page, total }` | 页码超出 | 这份 PDF 只有 {total} 页，没有第 {page} 页。 |
-| `BadPageSpec(String)` | `pages::parse` 看不懂 | 页码看不懂：…（写 3、1-5、1,3-4） |
-| `Render { page }` / `Ocr { page }` | 单页画不出、识别出错 | 第 {page} 页画不出来。/ 第 {page} 页识别出错。 |
+| `BadPageSpec(String)` | `pages::parse` 不接受的选页 | 引擎写的固定提示（格式、范围反向、超上限），**不回显输入原文**（防止粘进来的路径、密钥进提示） |
+| `Render { page }` | 单页画不出 | 第 {page} 页画不出来。 |
 | `Cancelled` | 取消 | 已停止。 |
 | `Unsupported` | 非 macOS | 只有 Mac 上能读 PDF。 |
 | `Io(io::Error)` | 读文件 | 读不了这个文件。 |
-| `Mathpix(MathpixError)` | 见 §3.6 | 见 §3.6 |
 
-密码 PDF 这一轮只报 `Locked`，不做解锁（以后要做加 `Document::unlock(password)`）。
+v0.3.0 再加 `Ocr { page }` 和 `Mathpix(MathpixError)`（§3.6）。要打开密码的 PDF 只报 `Locked`，不做解锁；只设了权限密码（禁止复制等）的照常读。截断一半的文件报 `Damaged`；只坏了尾部目录的，PDFKit 会自己修好照常读。
 
 ### 1.3 逐页读取
 
 ```rust
 pub struct ReadOptions {
     pub ocr: Ocr,                   // Off | Auto(OcrOptions)：没有文字层或文字层是乱码的页，用 Vision 在本机识别
-    pub render: Option<Render>,     // 要不要页图：哪些页（All / NoText）、最长边、JPEG/PNG、最多几张
-    pub text_min_chars: usize,      // 少于这么多个非空白字符算没有文字层（默认 20，沿用 Peck、Pith）
+    pub render: Option<Render>,     // 要不要页图：全部或 NoText、最长边、JPEG/PNG/灰度、最多几张
+    pub text_min_chars: usize,      // 少于这么多个非空白字符，文字层不足以代表整页（默认 20，沿用 Peck、Pith）
+    pub blank_max_dark_fraction: f64,  // 64px 灰度小图里深色像素（< 240）少于这个比例算几乎全白（默认 0.2%）
+    pub garbled_min_fraction: f64,  // 可疑字符（替换符、私用区、控制字符）多于这个比例算乱码（默认 20%）
 }
 
 pub fn read(doc: &Document, pages: &[u32], opts: &ReadOptions, cancel: &Cancel) -> Result<Vec<Page>, Error>;
@@ -83,25 +88,31 @@ pub struct Page {
 }
 
 pub enum Content {
-    Text(String),                 // 文字层：PDF 里本来就有的字（PDFKit 原样，不整理）
-    Ocr(OcrText),                 // 本机 Vision 识别的字 + why（NoTextLayer / Garbled）+ 平均置信度 + 每行文字和框
+    Text(String),                 // 文字层能代表这一页（PDFKit 原样，不整理）；也包括除了几个字别无他物的页（只有页码、一句话）
+    Ocr(OcrText),                 // （v0.3.0）本机 Vision 识别的字 + why（NoTextLayer / Garbled）+ 平均置信度 + 每行文字和框
     Blank,                        // 空白页：没有文字层，页面几乎全白（不跑 OCR）
-    NoText(NoTextReason),         // 有画面但没取到字：OcrOff / NothingRecognized（照片、图表）/ Garbled（乱码且没开 OCR）
+    NoText { reason, partial },   // 有画面但没取到能代表它的字：OcrOff / Garbled（v0.3.0 加 NothingRecognized）；
+                                  // partial 是文字层里那几个字（标题、图注），不丢；乱码时为空
     Failed(Error),                // 这一页读失败；其他页照常
 }
 ```
+
+- `read`、`read_each` 按传入数组的顺序处理，重复页照常处理；越界页交 `Failed(PageOutOfRange)` 后接着读（`pages::parse` 出来的本来就排序去重）。
+- `read_each` 回调返回 `Flow::Stop` 就停，交回 `Summary`（已读页数、各类页数、附图数）。
+- `Render::jpeg / png / gray(max_side)`，可加 `.only_no_text()`、`.at_most(n)`。`Gray` 是 8 位像素，左上起逐行、每行 `width` 字节，0 黑 255 白，空白判定和 OCR 直接用。
 
 App 怎么分辨四种情况：`Text` = 原文、`Ocr` = 识别结果（可能有错字）、`Blank` = 空白、`Failed` = 读取失败；整份打不开在 `Document::open` 就返回 `Err`。`OcrText.lines` 的框是 PDF 坐标（左下原点、单位 pt），和 PDF.js 的 `convertToPdfPoint` 同一套，Pith 以后要在阅读器里高亮 OCR 结果可以直接用。
 
 ### 1.4 页码
 
-- `pages::parse(spec, total, max)`：Peck 现有的 `parse_pages` 整段移过来（带测试），三个 App 共用同一种写法。
+- `pages::parse(spec, total, max)`：Peck 的语法和测试原样搬来（`3`、`1-5`、`1,3-4`、`4-`，中文逗号也行，排序去重，右端超出截到最后一页）。
+- `Document::split` 也按传入顺序、允许重复，但任一页越界整个返回错误（要的是一份完整的 PDF）。
 - `Page.index` 永远是原文件物理页码；`Page.label` 来自 PDFKit 的 `PDFPage.label`，和 PDF.js 的 `getPageLabels()` 读的是同一个 `/PageLabels`。**引用定位存 `index`，显示用 `label`**（Pith 阅读器按 `pageIndex = index - 1` 跳转）。验收里有一份带罗马数字前言的样本专门核对（§5）。
 - Mathpix 的结果也映射回 `index`（§3.4）。
 
 ### 1.5 取消与进度
 
-`Cancel` 是 `Arc<AtomicBool>` 的薄包装：App 在任何线程 `cancel.cancel()`，引擎**每页开始前**、每次 Vision 请求后、Mathpix 每次轮询之间（50ms 粒度）检查，返回 `Error::Cancelled`。一页内部不打断（PDFKit 取字几毫秒，Vision 一页不到 1 秒）。进度靠 `read_each` 的回调（每交一页就是进度），Mathpix 另有 `progress: &dyn Fn(Progress)`。Peck 的 `watch::Receiver<bool>` 在 Peck 那边桥一下：起一个小任务等 `wait_for` 后调 `cancel.cancel()`。
+`Cancel` 用 `Arc<AtomicBool>` 跨线程共享。App 在任何线程调用 `cancel.cancel()`，本机读页、拆页和图片计数在每页开始前检查，发现取消时返回 `Error::Cancelled`。PDFKit 正在处理的单页会完成。`read_each` 每交付一页就调用回调。Vision 和 Mathpix 的取消检查随 v0.3.0 实现。接入 Peck 时可以等 `watch::Receiver<bool>::wait_for` 后调用 `cancel.cancel()`。
 
 ### 1.6 Peck 调用示例
 
@@ -121,7 +132,7 @@ for p in read(&doc, &wanted, &opts, &cancel)? {
         Content::Text(t) => t.trim().to_string(),
         Content::Ocr(o) => format!("（这一页没有文字层，下面是本机 OCR 识别的，可能有错字）\n{}", o.text),
         Content::Blank => "（空白页）".into(),
-        Content::NoText(_) => attach_or_hint(&p.image),            // 照旧：附图，或提示用 ocr_pdf
+        Content::NoText { partial, .. } => attach_or_hint(partial, &p.image),   // 照旧：附图，或提示用 ocr_pdf
         Content::Failed(e) => format!("（这一页没读出来：{e}）"),
     };
     out.push_str(&format!("\n--- 第 {} 页 ---\n{body}\n", p.index));
@@ -164,12 +175,12 @@ match done {
 | 打开（`initWithData` / `initWithURL`、`isLocked`） | Pomelo `pdf.rs::open` | 错误换成 `Error::{Damaged, Locked}`；先看 `%PDF-` 头（Peck `resolve_pdf`）报 `NotPdf` |
 | 逐页取字（`pageAtIndex` → `string`，每页一个 autorelease pool） | Pomelo `pdf.rs::pages` | 改成按页取，不一次取全份 |
 | 页标签 | 新写：`PDFPage.label` | — |
-| 画页（`boundsForBox` + 旋转 + `thumbnailOfSize:forBox:` → JPEG） | Pomelo `pdf.rs::jpeg_page`、`jpeg_of` | 加 PNG 和灰度小图（空白判定、OCR 用的不编码成 JPEG，直接拿 `CGImage`） |
+| 画页（`boundsForBox` + 旋转 → 白底位图） | Pomelo `pdf.rs::jpeg_page`、`jpeg_of` | 改画 CropBox（Pomelo、Peck 画的是 MediaBox，知网等文件两者不同）；PDFKit 绘到 CoreGraphics 位图，AppKit 编码 JPEG / PNG，灰度直接交回像素 |
 | 拆页（新建 `PDFDocument`，`insertPage(page.copy)`） | Peck JXA 的 `split` | 用 objc2 重写，交回 `dataRepresentation` 的字节，不落临时文件 |
 | 哪些页有图（CGPDF 数 XObject） | Pomelo `pdf.rs::image_pages` | 原样搬，作 `Document::image_counts()`（Pomelo 的 `office.rs` 在用） |
 | 乱码判定（替换字符、私用区、控制字符 > 20%） | Pith `content.rs::garbled` | 原样搬 |
 | 页码解析 | Peck `pdf.rs::parse_pages` + 测试 | 原样搬到 `pages::parse` |
-| 测试用的最小 PDF（手写 PDF 语法） | Pomelo `pdf.rs::tests::sample_pdf` | 搬进 `samples`，加 `/PageLabels` |
+| 测试用的最小 PDF（手写 PDF 语法） | Pomelo `pdf.rs::tests::sample_pdf` | 作 `samples::raw_pdf`，可加 Catalog 条目（`/PageLabels`）和页字典条目（`/Rotate`、`/CropBox`） |
 
 不搬的：Pomelo 的 `images_to_pdf`（只有 Pub2MD 用，留在 Pomelo）、`print.rs`（打印是 Pomelo 自己的流程）、`sha256_hex`（不是 PDF 处理）。
 
@@ -184,23 +195,23 @@ match done {
 ### 2.4 一页怎么分类
 
 ```text
-取文字层 ─ 有效字符 ≥ text_min_chars 且不是乱码 ──────────────→ Text
+取文字层 ─ 正常字符 ≥ text_min_chars 且不是乱码 ─────────────→ Text
    │否
-   ├─ 画 64px 灰度小图，深色像素 < 0.2% ─────────────────────→ Blank
-   │否
-   ├─ ocr = Off ──────────────────→ NoText(OcrOff 或 Garbled)
+   ├─ 画 64px 灰度小图，深色像素 < 0.2% ─ 有正常的字 ───────→ Text（只有页码、一句话的页）
+   │                                └ 没有 ──────────→ Blank
+   ├─ ocr = Off ──────────────────→ NoText { OcrOff 或 Garbled, partial }
    │
-   └─ Vision 识别 ─ 认出字 ──────→ Ocr(why = NoTextLayer 或 Garbled)
-                  └ 没认出 ──────→ NoText(NothingRecognized)
+   └─ （v0.3.0）Vision 识别 ─ 认出字 ─→ Ocr(why = NoTextLayer 或 Garbled)
+                           └ 没认出 ─→ NoText { NothingRecognized, partial }
 任何一步出错 ──────────────────────→ Failed(Error)，接着读下一页
 ```
 
-空白阈值（0.2%）、乱码比例（20%）、`text_min_chars`（20）都放进 `ReadOptions`，默认值用样本校准。
+三个阈值（20 字、0.2%、20%）在生成的边界页上校准过：0.195% 判空白、0.22% 不判；20% 可疑字符仍算文字、21% 算乱码；19 字不够、20 字够。
 
-### 2.5 长文档
+### 2.5 长文档与耗时
 
-- 一页一个 autorelease pool，页图在回调里交出去，`read_each` 的内存只跟一页有关；`read` 只给页数少的场景（Peck 一次最多 20 页）。
-- 粗估（M3 Pro，要用样本实测后写进本节）：取字每页几毫秒；画 1568px JPEG 每页几十毫秒；Vision 精确模式每页零点几秒到 1 秒，300 页扫描书约 3–5 分钟，所以 App 要显示进度、能取消。
+- 页图随回调逐页交出，`read_each` 不攒结果；`read` 只给页数少的场景（Peck 一次最多 20 页）。每页一个 autorelease pool。
+- 实测（M3 Pro、Release）：29 篇真实论文共 535 页，取字加分类每份 30–220 ms（每页约 2–10 ms）；真实论文画 1568px JPEG 约 40 ms/页（35 页 1.4 s）。生成的 300 页样本取字加分类共约 35 ms，中途取消在下一页前停下。Vision 的耗时 v0.3.0 测。
 - 引擎不并行：一次一页。App 想同时处理几份文件自己开几个阻塞任务；资源约束下不建议同时跑两份 OCR。
 
 ---
@@ -354,7 +365,7 @@ Pomelo 上传 Word 文件走 `mathpix::submit_file(bytes, mime, ...)`：不拆�
 
 ### 5.1 样本
 
-不提交二进制，提交**生成器**：feature `samples` 用 CoreText + CGPDFContext 现场生成（系统字体只用来画，PDF 不进 Git，也就没有字体再分发的问题），引擎和三个 App 的测试都调它；`cargo run --example make_samples` 把它们写进 `samples/out/` 给人看。源文字写死在代码里，所以「缺没缺字」「顺序对不对」能自动比。
+生成器通过 `samples` feature 用 CoreText + CGPDFContext 现场生成 PDF，供引擎和三个 App 的测试使用。`cargo run --features samples --example make_samples` 将样本写入 `samples/out/`。PDF 产物留在本机。源文字随生成器提供，可自动比对缺字和顺序。
 
 | 样本 | 内容 | 验什么 |
 | --- | --- | --- |
@@ -364,6 +375,8 @@ Pomelo 上传 Word 文件走 `mathpix::submit_file(bytes, mime, ...)`：不拆�
 | `scanned_two_column` | 两栏中文扫描 | OCR 的阅读顺序 |
 | `labels` | 前 3 页标 i–iii，之后 1 起 | 页标签、引用定位 |
 | `locked` / `damaged` / `not_pdf` | 用户密码；截断的 `text_en`；一段纯文本 | 明确的错误 |
+| 300 页 | `tests/read.rs` 里把 `mixed` 拆页重复 30 次 | 连续交付与中途取消 |
+| 边界页 | `samples::raw_pdf` 手写：旋转、CropBox、只有页码或一句标题的页 | 页图范围、短文字不丢 |
 
 真实世界的文件（站主自己的中文扫描书、双栏论文）只放 `local/` 做人工抽查；要一份可提交的公开双栏论文的话，届时问站主（下载要同意，来源和许可证记进 `samples/README.md`）。
 
@@ -376,12 +389,12 @@ Pomelo 上传 Word 文件走 `mathpix::submit_file(bytes, mime, ...)`：不拆�
 | 只选第 8 页识别公式表格：确认框显示第 8 页和费用；取消零请求；上传件只有这一页；结果标第 8 页 | `FakeTransport`：`quote.pages == [8]`、`usd == 0.005`；不调 `run` 时请求数 = 0；调了只有 1 个上传、上传件 1 页且画出来和原第 8 页像素一致；结果 `index == 8`；成功、失败、取消、超时都发了 `DELETE` | 真跑一次 Mathpix（`#[ignore]` 测试，$0.005）：LaTeX 质量、真实回应的映射、Mathpix 那边删掉了；Peck 里看批准框、点拒绝后日志里没有请求 |
 | 损坏、要密码时明确提示；App 从自己的安装包调用引擎 | `damaged` → `Damaged`，`locked` → `Locked`，`not_pdf` → `NotPdf` | 三个 App 里各看一次提示；正式版里读 PDF 时没有 `osascript` 子进程（Peck），`otool -L` 看到 App 二进制链着 PDFKit、Vision，`cargo tree -i engine-pdf` 看到钉的 tag |
 
-另外每个版本发版前跑一次 `cargo run --example probe -- <文件> --pages 1-10 --ocr --render samples/out/`，把每页类型、字数、耗时打出来，耗时记进 §2.5。
+每个版本发版前用 `probe`（`--text` 看文字、`--render` 出页图）在样本和 `~/ResearchLab-test/` 的真实论文上过一遍，人看输出。
 
 ---
 
-## 6. 第一步
+## 6. v0.2.0 实测结论
 
-**第一步做 v0.2.0 Phase 1–2：引擎骨架（`Error`、`Cancel`、`pages::parse`、`src/sys/` 的 PDFKit 打开和取字）加样本生成器。** 原因：渲染、OCR、Mathpix 拆页，以及 Peck 的基准对照，都站在「打开 + 按页取字 + 一套已知内容的样本」上；而 Peck 第一个接的就是这一块，新旧都是 PDFKit，能逐字对照，桥写错了马上看得出来。代码大半是从 Pomelo `pdf.rs`、Peck `parse_pages` 搬的，风险最低。
-
-还要用样本实测才能定的：PDFKit 对两栏和中文的顺序、缺字；Vision 的中文准确率和两栏顺序（§2.3 的排序办法）；空白、乱码、字数三个阈值；真实 Mathpix 回应里 `\pagebreak` 和页数是否总对得上（§3.4）；PDFKit 页标签和 PDF.js 是否一致；各步耗时（§2.5）。
+- **和 Peck 现在的读法逐字一致**：29 篇真实论文（中英文、单双栏）535 页，引擎的文字层和 Peck 现有 JXA 读出来的完全相同——v0.4.0 换 Peck 时文字不会变。
+- 中文知网论文、英文双栏论文的文字层顺序正常（左栏读完再右栏）；PDFKit 原样交出连字（`ﬀ`）和全角数字，整理归 App。
+- 还要用样本或真实文件验的：Vision 中文准确率和双栏扫描的顺序（§2.3）；真实 Mathpix 回应里 `\pagebreak` 和页数对不对得上（§3.4）；PDFKit 页标签和 PDF.js 是否一致（v0.5.0 接 Pith 时）。
