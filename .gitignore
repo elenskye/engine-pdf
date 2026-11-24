@@ -1,0 +1,12 @@
+# Rust
+/target/
+
+# 人工验收时生成的样本和输出（生成器在 examples/，产物不进 Git）
+/samples/out/
+
+# 本机私有：用户自己的 PDF、真实验收的原始回应
+/local/
+
+.DS_Store
+.claude/worktrees/
+.claude/settings.local.json

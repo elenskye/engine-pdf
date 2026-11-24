@@ -1,0 +1,10 @@
+[package]
+name = "engine-pdf"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Peck、Pith、Pomelo 共用的 Mac PDF 引擎：打开、取字、渲染、本机 OCR、Mathpix 识别"
+license = "UNLICENSED"
+publish = false
+
+[dependencies]
