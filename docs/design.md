@@ -65,7 +65,7 @@ v0.3.0 再加 `Ocr { page }` 和 `Mathpix(MathpixError)`（§3.6）。要打开�
 
 ```rust
 pub struct ReadOptions {
-    pub ocr: Ocr,                   // Off | Auto(OcrOptions)：没有文字层或文字层是乱码的页，用 Vision 在本机识别
+    pub ocr: Ocr,                   // Off | （v0.3.0）Auto(OcrOptions)：文字层不够或是乱码的页，用 Vision 在本机识别
     pub render: Option<Render>,     // 要不要页图：全部或 NoText、最长边、JPEG/PNG/灰度、最多几张
     pub text_min_chars: usize,      // 少于这么多个非空白字符，文字层不足以代表整页（默认 20，沿用 Peck、Pith）
     pub blank_max_dark_fraction: f64,  // 64px 灰度小图里深色像素（< 240）少于这个比例算几乎全白（默认 0.2%）
@@ -189,8 +189,9 @@ match done {
 - `VNRecognizeTextRequest`：`recognitionLevel = accurate`、`usesLanguageCorrection = true`、`recognitionLanguages` 默认 `["zh-Hans", "zh-Hant", "en-US"]`（`OcrOptions` 可改）。`VNImageRequestHandler(cgImage:)` 的 `performRequests` 是同步的，正好配同步接口。完全在本机跑，不联网。
 - 输入：页面用 CoreGraphics 画成灰度 `CGImage`，最长边默认 2400px（Pomelo 给模型看图用的也是 2400），白底。
 - 输出：每个 `VNRecognizedTextObservation` 取 `topCandidates(1)`，得到文字、置信度、框；框从 Vision 的归一化坐标换成 PDF 坐标。
-- **阅读顺序**：Vision 不保证两栏的顺序。引擎按行框排：先找有没有竖直的栏缝（页面中部一条没有行跨过的竖带，两边都有足够多行），有就左栏从上到下、再右栏；没有就整页从上到下、同一行从左到右。双栏扫描样本专门验（§5）。
-- 以后可评估：macOS 26 的 Vision 新增了能认文档结构（段落、表格、阅读顺序）的接口，但只有 Swift 能调；要用得加一层 Swift 静态库，1.0 不做。
+- **阅读顺序**：Vision 不保证两栏的顺序（真实知网双栏页实测会左右行交错）。引擎按行框排：先找有没有竖直的栏缝（页面中部一条没有行跨过的竖带，两边都有足够多行），有就左栏从上到下、再右栏；没有就整页从上到下、同一行从左到右。
+- 不用 macOS 26 只有 Swift 能调的 `RecognizeDocumentsRequest`：实测它会把左右栏的行并进同一段（`decisions/0005`）。
+- 耗时：热启动 0.15–0.8 s/页（1568px）；系统第一次加载模型约 17 s，所以给 `ocr::warm_up()`。
 
 ### 2.4 一页怎么分类
 

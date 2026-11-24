@@ -1,10 +1,10 @@
 # HANDOFF
 
-更新：2026-11-24 · v0.2.0 已发版（tag `v0.2.0`）· Claude Code 审核
+更新：2026-11-24 · v0.2.0 已发版（tag `v0.2.0`），v0.3.0 计划已写 · Claude Code
 
 ## 现在在哪
 
-v0.2.0（本机读取）完成：Codex 实施 Phase 1–5，Claude 审核、改进、实测、提交、打 tag。下一步是 v0.3.0（Vision 本机 OCR + Mathpix），Phase 计划等站主答了决策点再写进 `ROADMAP.md`。
+v0.2.0（本机读取）完成：Codex 实施 Phase 1–5，Claude 审核、改进、实测、提交、打 tag。v0.3.0（Vision 本机 OCR + Mathpix）的 Phase 计划已写进 `ROADMAP.md`，等站主看过。实测选了 Vision 的旧接口（`decisions/0005`）。
 
 ## 这轮审核改了什么
 
@@ -26,7 +26,7 @@ v0.2.0（本机读取）完成：Codex 实施 Phase 1–5，Claude 审核、改�
 ## 已知问题
 
 - PDFKit 原样交出连字（`ﬀ`）、全角数字；个别字体的连字没有文字对照（XGBoost 论文里 `https` 读成 `hps`）。整理归 App，取不到的只能靠 OCR。
-- 这批真实文件里没有扫描件，`NoText` / `Blank` 只在生成样本上验过；v0.3.0 需要真实扫描件（见「等你」）。
+- 这批真实文件里没有扫描件，`NoText` / `Blank` 只在生成样本上验过；v0.3.0 用仿扫描件和站主给的真实扫描件补（见「等你」）。
 
 ## 等你
 
@@ -40,9 +40,11 @@ v0.2.0（本机读取）完成：Codex 实施 Phase 1–5，Claude 审核、改�
    git push origin v0.2.0
    ```
 
-2. **回答 v0.3.0 的决策点**（本轮最后的提问）。
-3. （v0.3.0 用）**一两份真实扫描 PDF**：中文扫描书或论文的几页就够，放进 `local/`（不进 Git）。没有的话只用生成样本验 OCR。
+2. **看 v0.3.0 的 Phase 计划**（`ROADMAP.md`「v0.3.0 识别」），批了 Codex 就开工。
+3. **放几页真实扫描件**进 `engine-pdf/local/`（中文扫描书或论文都行，几页就够；`local/` 不进 Git）。Phase 2 开始前放好就行。
+
+Mathpix 真跑（v0.3.0 Phase 5）你已同意沿用 Pith 那份密钥、整版上限 $1。
 
 ## 下一轮
 
-站主答完决策点 → Claude 把 v0.3.0 的 Phase 表写进 `ROADMAP.md` → Codex 照 `AGENTS.md` 做 v0.3.0 Phase 1。
+站主批了计划 → 让 Codex 照 `AGENTS.md` 做 **v0.3.0 Phase 1**：「读 AGENTS.md、HANDOFF.md、ROADMAP.md 的 v0.3.0 和 docs/design.md §2.3、§2.4，做 v0.3.0 Phase 1，做完照 AGENTS.md『汇报』写 HANDOFF」。Codex 做完回到 Claude 审核、commit。
