@@ -2,6 +2,11 @@
 
 每个发出去的版本（tag `v<版本>`）：公共接口变化、App 升级要改什么。
 
+## v0.4.0（开发中）
+
+- **默认每页都附页图**：`ReadOptions::default()` 的 `render` 从 `None` 改成 `Some(Render::jpeg(1568))`，空白页、读失败的页除外（`decisions/0007`）。只要文字、不给模型看的场景（建索引、存库）请显式写 `render: None`。
+- 去掉 `Render::only_no_text()`（只给没取到字的页出图）。
+
 ## v0.3.0
 
 本机 OCR 和 Mathpix。

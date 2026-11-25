@@ -69,7 +69,7 @@ doc.split(&[8, 2, 8], &cancel)?;          // Vec<u8>：按指定顺序复制页�
 ```rust
 pub struct ReadOptions {
     pub ocr: Ocr,                   // Off | Auto(OcrOptions)：文字层不够或是乱码的页，用 Vision 在本机识别
-    pub render: Option<Render>,     // 要不要页图：全部或 NoText、最长边、JPEG/PNG/灰度、最多几张
+    pub render: Option<Render>,     // 页图：默认每页都附 1568px JPEG（空白、失败的页除外）；不给模型看的场景设 None
     pub text_min_chars: usize,      // 少于这么多个非空白字符，文字层不足以代表整页（默认 20，沿用 Peck、Pith）
     pub blank_max_dark_fraction: f64,  // 64px 灰度小图里深色像素（< 240）少于这个比例算几乎全白（默认 0.2%）
     pub garbled_min_fraction: f64,  // 可疑字符（替换符、私用区、控制字符）多于这个比例算乱码（默认 20%）
@@ -102,7 +102,7 @@ pub enum Content {
 
 - `read`、`read_each` 按传入数组的顺序处理，重复页照常处理；越界页交 `Failed(PageOutOfRange)` 后接着读（`pages::parse` 出来的本来就排序去重）。
 - `read_each` 回调返回 `Flow::Stop` 就停，交回 `Summary`（已读页数、各类页数、附图数，其中 `ocr` 统计识别出的页）。
-- `Render::jpeg / png / gray(max_side)`，可加 `.only_no_text()`、`.at_most(n)`。`Gray` 是 8 位像素，左上起逐行、每行 `width` 字节，0 黑 255 白，空白判定和 OCR 直接用。
+- **默认每页都附页图**（`decisions/0007`）：空白页、读失败的页除外，有文字层的页也附——页上的图表、公式、表格文字层表达不了，看不看由模型决定。做索引、存库这类不给模型看的场景把 `render` 设成 `None`。`Render::jpeg / png / gray(max_side)` 换格式和尺寸，`.at_most(n)` 限张数（默认不限）。`Gray` 是 8 位像素，左上起逐行、每行 `width` 字节，0 黑 255 白，空白判定和 OCR 直接用。
 
 整份打不开时 `Document::open` 返回 `Err`。`OcrText.lines` 的框在原 PDF 坐标系中（左下原点、单位 pt、包含 CropBox 偏移，并换回页面原旋转前的方向）。它与 PDF.js 的 `convertToPdfPoint` 使用同一坐标系，App 可以用来标示识别结果。
 
@@ -127,7 +127,7 @@ let doc = Document::open(&file)?;                                   // Locked / 
 let wanted = pages::parse(str_arg(input, "pages"), doc.page_count(), MAX_PAGES)?;
 let opts = ReadOptions {
     ocr: Ocr::auto(),                                               // 扫描页在本机识别，断网也行
-    render: vision.then(|| Render::jpeg(1568).only_no_text().at_most(6)),
+    render: vision.then(|| Render::jpeg(1568)),                    // 能看图的模型每页都给图；不能看的不画
     ..Default::default()
 };
 for p in read(&doc, &wanted, &opts, &cancel)? {
@@ -135,7 +135,7 @@ for p in read(&doc, &wanted, &opts, &cancel)? {
         Content::Text(t) => t.trim().to_string(),
         Content::Ocr(o) => format!("（这一页没有文字层，下面是本机 OCR 识别的，可能有错字）\n{}", o.text),
         Content::Blank => "（空白页）".into(),
-        Content::NoText { partial, .. } => attach_or_hint(partial, &p.image),   // 照旧：附图，或提示用 ocr_pdf
+        Content::NoText { partial, .. } => no_text_hint(partial),     // 提示可用 ocr_pdf；页图照常附在后面
         Content::Failed(e) => format!("（这一页没读出来：{e}）"),
     };
     out.push_str(&format!("\n--- 第 {} 页 ---\n{body}\n", p.index));

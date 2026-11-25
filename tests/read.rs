@@ -9,11 +9,11 @@ use engine_pdf::{
 };
 
 #[test]
-fn classifies_mixed_pages_and_limits_images() {
+fn classifies_mixed_pages_and_images_every_non_blank_page() {
     let doc = Document::from_bytes(&Sample::Mixed.generate().unwrap()).unwrap();
     let cancel = Cancel::new();
     let opts = ReadOptions {
-        render: Some(Render::png(96).only_no_text().at_most(2)),
+        render: Some(Render::png(96).at_most(5)),
         ..ReadOptions::default()
     };
     let mut classes = Vec::new();
@@ -58,7 +58,8 @@ fn classifies_mixed_pages_and_limits_images() {
             "text"
         ]
     );
-    assert_eq!(images, [2, 5]);
+    // 空白页（3）不附图；其余每页都附，到第 5 张为止（第 7、8、10 页超出上限）。
+    assert_eq!(images, [1, 2, 4, 5, 6]);
     assert_eq!(
         (
             summary.processed,
@@ -68,7 +69,7 @@ fn classifies_mixed_pages_and_limits_images() {
             summary.failed,
             summary.images
         ),
-        (10, 4, 2, 4, 0, 2)
+        (10, 4, 2, 4, 0, 5)
     );
     assert_eq!(
         doc.image_counts(&cancel).unwrap(),
@@ -117,7 +118,11 @@ fn reads_300_mixed_pages_and_honors_cross_thread_cancellation() {
     assert_eq!(doc.page_count(), PAGE_COUNT);
 
     let selected = (1..=PAGE_COUNT).collect::<Vec<_>>();
-    let options = ReadOptions::default();
+    // 这里只验分类和取消，不画页图。
+    let options = ReadOptions {
+        render: None,
+        ..ReadOptions::default()
+    };
     let cancel = Cancel::new();
     let mut next_page = 1;
     let summary = read_each(&doc, &selected, &options, &cancel, |page| {
@@ -206,4 +211,28 @@ fn short_text_is_kept_not_dropped() {
         pages[1].content
     );
     assert!(matches!(pages[2].content, Content::Blank));
+}
+
+#[test]
+fn default_options_attach_a_jpeg_to_every_page_except_blank_ones() {
+    let doc = Document::from_bytes(&Sample::Mixed.generate().unwrap()).unwrap();
+    let pages = read(
+        &doc,
+        &(1..=10).collect::<Vec<_>>(),
+        &ReadOptions::default(),
+        &Cancel::new(),
+    )
+    .unwrap();
+    for page in &pages {
+        match (&page.content, &page.image) {
+            (Content::Blank, None) => {}
+            (Content::Blank, Some(_)) => panic!("空白页第 {} 页不该附图", page.index),
+            (_, Some(image)) => {
+                assert_eq!(image.format, ImageFormat::Jpeg);
+                assert_eq!(image.width.max(image.height), 1568);
+            }
+            (other, None) => panic!("第 {} 页（{other:?}）没附图", page.index),
+        }
+    }
+    assert_eq!(pages.iter().filter(|page| page.image.is_some()).count(), 8);
 }

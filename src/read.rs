@@ -15,11 +15,13 @@ impl Ocr {
     }
 }
 
-/// `read` / `read_each` 的选项。默认：不开 OCR、不出图，阈值见各字段。
+/// `read` / `read_each` 的选项。默认：不开 OCR；**每页都附 1568px 的 JPEG 页图**（空白页、读失败的页除外），
+/// 看不看图由模型决定（`decisions/0007`）；阈值见各字段。
 #[derive(Clone, Debug)]
 pub struct ReadOptions {
     pub ocr: Ocr,
-    /// 要不要附页图，见 [`Render`]。
+    /// 附什么样的页图，见 [`Render`]。默认 `Render::jpeg(1568)`：给模型看的场景照默认就行；
+    /// 做索引、存库这类不给模型看的场景设成 `None`，省下画图的时间。
     pub render: Option<Render>,
     /// 文字层至少要有这么多个非空白字符才算能代表整页（默认 20，沿用 Peck、Pith）。
     pub text_min_chars: usize,
@@ -33,7 +35,7 @@ impl Default for ReadOptions {
     fn default() -> Self {
         Self {
             ocr: Ocr::Off,
-            render: None,
+            render: Some(Render::jpeg(1568)),
             text_min_chars: 20,
             blank_max_dark_fraction: 0.002,
             garbled_min_fraction: 0.20,
@@ -41,12 +43,11 @@ impl Default for ReadOptions {
     }
 }
 
-/// 附页图的设置：格式、最长边、只给哪些页、最多几张。
+/// 附页图的设置：格式、最长边、最多几张。空白页和读失败的页不附图，其余每页都附。
 #[derive(Clone, Copy, Debug)]
 pub struct Render {
     format: ImageFormat,
     max_side: u32,
-    only_no_text: bool,
     limit: usize,
 }
 
@@ -67,18 +68,11 @@ impl Render {
         Self {
             format,
             max_side,
-            only_no_text: false,
             limit: usize::MAX,
         }
     }
 
-    /// 仅给 `Content::NoText` 的页附图。
-    pub fn only_no_text(mut self) -> Self {
-        self.only_no_text = true;
-        self
-    }
-
-    /// 本次读取最多附上 `limit` 张图。
+    /// 本次读取最多附上 `limit` 张图（默认不限）。
     pub fn at_most(mut self, limit: usize) -> Self {
         self.limit = limit;
         self
@@ -93,6 +87,7 @@ pub struct Page {
     /// 页标签，显示用。见 [`Document::label`]。
     pub label: Option<String>,
     pub content: Content,
+    /// 页图。按 [`ReadOptions::render`] 默认每页都有，空白页、读失败的页没有。
     pub image: Option<Image>,
 }
 
@@ -187,8 +182,7 @@ pub fn read_each(
         let mut image = None;
         if let Some(render) = opts.render {
             if summary.images < render.limit
-                && !matches!(content, Content::Failed(_))
-                && (!render.only_no_text || matches!(content, Content::NoText { .. }))
+                && !matches!(content, Content::Failed(_) | Content::Blank)
             {
                 match doc.render(index, render.format, render.max_side) {
                     Ok(rendered) => {

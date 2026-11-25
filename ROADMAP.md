@@ -31,7 +31,7 @@ App 那边每次接入是它自己的一个版本，程度到时问站主。引�
 站主定的（2026-11-25 ASK）：
 
 - **Peck 这边算小幅优化**：一轮做完、不分 Phase，做完自动更新 Peck 正式版。版本号是 Peck 1.1.10（另一个会话正在做）之后的下一个补丁号，开工时看 Peck 的 `package.json` 定。
-- **扫描页给模型 OCR 文字 + 页图**：能看图的模型两样都给，不能看图的只给 OCR 文字。页图沿用 Peck 现有的「一次最多 6 张」。
+- **每页都给页图**（2026-11-25 站主改定，`decisions/0007`）：能看图的模型每页都给文字（或 OCR 文字）+ 页图，空白页、读失败的页除外，看不看由模型决定；去掉 Peck 原来「一次最多 6 张」的上限（一次最多 20 页，一张图约 1,500 tokens，满 20 页约 3 万）。不能看图的模型只给文字。
 - **Mathpix 上传前每次弹确认框**（第几页、预计费用），不管权限档位；可选「一直允许」，只在这个任务里有效，不存进项目设置。
 - **真跑额度**：DeepSeek 10 次尝试 + Mathpix $0.05，记进 Peck 的「现行授权」账本；Mathpix 密钥沿用 Pith 那份。
 
@@ -40,8 +40,8 @@ App 那边每次接入是它自己的一个版本，程度到时问站主。引�
 | 步骤 | 在哪 | 做什么 | 做完的样子 |
 | --- | --- | --- | --- |
 | 1 引用和对照 | Peck | `Cargo.toml` 加 `engine-pdf`（git + tag `v0.3.0`；dev-dependency 开 `samples`、`fake`）。换之前先写对照测试：旧 JXA 和引擎读 `samples` 的样本，逐字一致、出图的页一致 | 对照测试过，证明换引擎不改文字（引擎这边已在 535 页真实论文上比过） |
-| 2 引擎补接口 | engine-pdf | `Render::only_no_text()` 现在只给 `NoText` 页出图；改成「没有文字层的页」都出图（`Ocr` 和 `NoText`），名字改成 `only_without_text()`。接入中发现的其他小问题一起修 | 引擎测试过；打 tag `v0.4.0` |
-| 3 换 `read_pdf` | Peck | `harness/tools/pdf.rs`：JXA、`page_count`、`read_pages`、`has_text`、`split` 换成 `Document` + `read(Ocr::auto())`；`parse_pages` 换成 `engine_pdf::pages::parse`；`format_pages` 留在 Peck，加「本机识别的文字（可能有错字）」「空白页」「这一页没读出来」的说法，`NoText` 的 `partial` 也给模型。`tools/web.rs` 下载的 PDF 同样。取消：Peck 的 `watch` 桥到 `Cancel`。第一次识别要加载模型（16–33 s），第一次用到时再加载、不在启动时预热 | 扫描页断网出字；文字页和以前逐字一样；页码照旧标「第 N 页」 |
+| 2 引擎补接口 | engine-pdf | 已先做：`ReadOptions` 默认每页附 1568px JPEG（空白、失败的页除外），去掉 `Render::only_no_text()`。接入中发现的其他小问题一起修 | 引擎测试过；打 tag `v0.4.0` |
+| 3 换 `read_pdf` | Peck | `harness/tools/pdf.rs`：JXA、`page_count`、`read_pages`、`has_text`、`split` 换成 `Document` + `read(Ocr::auto())`；`parse_pages` 换成 `engine_pdf::pages::parse`；`format_pages` 留在 Peck，加「本机识别的文字（可能有错字）」「空白页」「这一页没读出来」的说法，`NoText` 的 `partial` 也给模型；能看图的模型每页附图、去掉 `MAX_IMAGES = 6`，不能看图的 `render: None`。`tools/web.rs` 下载的 PDF 同样。取消：Peck 的 `watch` 桥到 `Cancel`。第一次识别要加载模型（16–33 s），第一次用到时再加载、不在启动时预热 | 扫描页断网出字；文字页和以前逐字一样；页码照旧标「第 N 页」 |
 | 4 换 `ocr_pdf` | Peck | `harness/loop.rs::ocr_job`：`mathpix::quote` → `approve_as`（确认框：第几页、预计费用、只上传这几页、读完删掉）→ `mathpix::run`；拒绝就 `Denied`、不发请求；「一直允许」只记在这个任务。结果按「--- 第 N 页 ---」分页给模型（原页码）。`Usage` 不管成败都记成 `Fee::Ocr`；远端没删掉要说。删掉 `gateway/mathpix.rs`；模拟模式用 `FakeTransport::echo()` | 测试：拒绝时零请求；上传件只有选中的页；结果标原页码；失败也记费 |
 | 5 验收、收尾 | 两边 | brief 首轮验收的四个场景（下表）；Peck 钉 `v0.4.0`；更新 Peck 正式版；两边的文档和 HANDOFF | 四个场景都过；真跑花费记账 |
 
