@@ -4,7 +4,7 @@
 
 ## 现在在哪
 
-v0.3.0（本机 OCR + Mathpix）完成：Codex 实施 Phase 1–5，Claude 审核、改进、实测、提交、打 tag。下一步是 v0.4.0 接 Peck，Phase 计划等站主定了决策点再写进 `ROADMAP.md`。
+v0.3.0（本机 OCR + Mathpix）完成：Codex 实施 Phase 1–5，Claude 审核、改进、实测、提交、打 tag。v0.4.0 接 Peck 的计划已写进 `ROADMAP.md`（站主定了：Peck 这边算小幅优化、一轮做完），等 Peck 1.1.10 提交后开工。
 
 ## 这轮审核改了什么
 
@@ -52,8 +52,9 @@ cargo run --release --example probe -- samples/out/mixed.pdf --mathpix 3,5,8 --t
    git push origin v0.3.0
    ```
 
-2. **回答 v0.4.0（接 Peck）的决策点**（本轮最后的提问）。
+2. **看 v0.4.0（接 Peck）的计划**：`ROADMAP.md`「v0.4.0 接 Peck」。你在提问里定的都写进去了。
+3. **Peck 1.1.10 做完、提交后**告诉我们一声，v0.4.0 才能开工（两边改的是同一个仓库）。
 
 ## 下一轮
 
-站主答完决策点 → Claude 把 v0.4.0 的 Phase 表写进 `ROADMAP.md` → Codex 在 Peck 仓库照 Peck 的 `CLAUDE.md` 和本仓库 `AGENTS.md` 做 v0.4.0 Phase 1。
+Peck 1.1.10 提交后 → 让 Codex 在 Peck 仓库做 v0.4.0：「读 engine-pdf 的 AGENTS.md、HANDOFF.md、ROADMAP.md『v0.4.0 接 Peck』，再读 Peck 的 CLAUDE.md；照步骤 1–5 做，Peck 的改动守 Peck 的规矩，引擎的改动在 engine-pdf 做；做完两边都写 HANDOFF」。Codex 做完回到 Claude 审核、commit、打 tag。

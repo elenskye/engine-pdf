@@ -24,13 +24,6 @@ Peck、Pith、Pomelo 共用的 Mac PDF 引擎（Rust 库）。App 把 PDF 和要
 engine-pdf = { git = "https://github.com/elenskye/engine-pdf", tag = "v0.3.0" }
 ```
 
-仓库是私有的，App 根目录的 `.cargo/config.toml` 加：
-
-```toml
-[net]
-git-fetch-with-cli = true
-```
-
 升级改 tag，回退改回上一个 tag。每版接口变化见 `CHANGELOG.md`。
 
 ## 开发
