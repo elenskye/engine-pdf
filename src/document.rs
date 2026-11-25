@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{Cancel, Error, sys};
+use crate::{Cancel, Error, OcrOptions, OcrText, ocr, sys};
 
 /// 已打开的 PDF。必须在创建它的线程上使用。
 ///
@@ -39,6 +39,12 @@ impl Document {
         self.0.text(page)
     }
 
+    /// 在本机识别指定物理页，使用最长边 2400 像素的灰度页图。
+    /// 没有识别出字时，结果的文字和行列表为空。
+    pub fn ocr(&self, page: u32, opts: &OcrOptions) -> Result<OcrText, Error> {
+        self.0.ocr(page, opts).map(ocr::assemble)
+    }
+
     /// 输出白底页图，最长边为 `max_side` 像素。画的是 CropBox（阅读器显示的范围），带页面旋转。
     pub fn render(&self, page: u32, format: ImageFormat, max_side: u32) -> Result<Image, Error> {
         self.0.render(page, format, max_side)
@@ -62,6 +68,15 @@ impl Document {
 
     pub(crate) fn page(&self, page: u32) -> Result<(Option<String>, String), Error> {
         self.0.page(page)
+    }
+
+    #[cfg(feature = "samples")]
+    pub(crate) fn scan(&self, page: u32) -> Result<Vec<u8>, Error> {
+        self.0.scan(page)
+    }
+
+    pub(crate) fn original_bytes(&self) -> &[u8] {
+        self.0.original_bytes()
     }
 }
 

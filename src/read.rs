@@ -1,14 +1,22 @@
-use crate::{Cancel, Document, Error, Image, ImageFormat};
+use crate::{Cancel, Document, Error, Image, ImageFormat, OcrOptions, OcrReason, OcrText};
 
-/// 没有可用文字层的页要不要在本机识别。v0.2.0 只有 `Off`，`Auto` 在 v0.3.0。
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+/// 没有可用文字层的页要不要在本机识别。
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum Ocr {
     #[default]
     Off,
+    Auto(OcrOptions),
+}
+
+impl Ocr {
+    /// 使用默认语言自动识别。
+    pub fn auto() -> Self {
+        Self::Auto(OcrOptions::default())
+    }
 }
 
 /// `read` / `read_each` 的选项。默认：不开 OCR、不出图，阈值见各字段。
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ReadOptions {
     pub ocr: Ocr,
     /// 要不要附页图，见 [`Render`]。
@@ -93,6 +101,8 @@ pub struct Page {
 pub enum Content {
     /// 文字层就能代表这一页：字数够、不是乱码；或者页面上除了这几个字别无他物（只有页码、一句标题的页）。
     Text(String),
+    /// 文字层不足或乱码，用 Vision 识别出了文字。
+    Ocr(OcrText),
     /// 空白页：没有文字层，页面几乎全白。
     Blank,
     /// 页面上有画面，但没取到能代表它的字（扫描页、图、只有几个字的图文页）。
@@ -111,6 +121,8 @@ pub enum NoTextReason {
     OcrOff,
     /// 文字层是乱码（字体没带文字对照表），且没开 OCR。
     Garbled,
+    /// 页面有内容，但 OCR 未识别出文字。
+    NothingRecognized,
 }
 
 /// `read_each` 回调的返回值：接着读，或到此为止。
@@ -125,6 +137,7 @@ pub enum Flow {
 pub struct Summary {
     pub processed: usize,
     pub text: usize,
+    pub ocr: usize,
     pub blank: usize,
     pub no_text: usize,
     pub failed: usize,
@@ -160,10 +173,14 @@ pub fn read_each(
     for &index in pages {
         cancel.check()?;
         let (label, mut content) = match doc.page(index) {
-            Ok((label, text)) => (
-                label,
-                classify(doc, index, text, opts).unwrap_or_else(Content::Failed),
-            ),
+            Ok((label, text)) => {
+                let content = match classify(doc, index, text, opts, cancel) {
+                    Ok(content) => content,
+                    Err(Error::Cancelled) => return Err(Error::Cancelled),
+                    Err(error) => Content::Failed(error),
+                };
+                (label, content)
+            }
             Err(error) => (None, Content::Failed(error)),
         };
 
@@ -186,6 +203,7 @@ pub fn read_each(
         summary.processed += 1;
         match &content {
             Content::Text(_) => summary.text += 1,
+            Content::Ocr(_) => summary.ocr += 1,
             Content::Blank => summary.blank += 1,
             Content::NoText { .. } => summary.no_text += 1,
             Content::Failed(_) => summary.failed += 1,
@@ -208,6 +226,7 @@ fn classify(
     index: u32,
     text: String,
     opts: &ReadOptions,
+    cancel: &Cancel,
 ) -> Result<Content, Error> {
     let (total, garbled) = text_quality(&text, opts.garbled_min_fraction);
     if total >= opts.text_min_chars.max(1) && !garbled {
@@ -225,19 +244,27 @@ fn classify(
         });
     }
 
-    match opts.ocr {
-        Ocr::Off => Ok(if garbled {
-            Content::NoText {
-                reason: NoTextReason::Garbled,
-                partial: String::new(),
+    let reason = match &opts.ocr {
+        Ocr::Off if garbled => NoTextReason::Garbled,
+        Ocr::Off => NoTextReason::OcrOff,
+        Ocr::Auto(options) => {
+            cancel.check()?;
+            let result = doc.ocr(index, options);
+            cancel.check()?;
+            let mut result = result?;
+            if !result.lines.is_empty() {
+                result.why = if garbled {
+                    OcrReason::Garbled
+                } else {
+                    OcrReason::NoTextLayer
+                };
+                return Ok(Content::Ocr(result));
             }
-        } else {
-            Content::NoText {
-                reason: NoTextReason::OcrOff,
-                partial: text,
-            }
-        }),
-    }
+            NoTextReason::NothingRecognized
+        }
+    };
+    let partial = if garbled { String::new() } else { text };
+    Ok(Content::NoText { reason, partial })
 }
 
 // 字符范围沿用 Pith 的乱码检查。

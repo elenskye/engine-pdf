@@ -1,0 +1,53 @@
+{
+  "pages": [
+    {
+      "image-id": "sample-3",
+      "page": 3,
+      "page_height": 2100,
+      "page_width": 1500,
+      "lines": [
+        {
+          "id": "equation",
+          "type": "equation",
+          "line": 1,
+          "text": "x^2",
+          "text_display": "$$x^2$$",
+          "conversion_output": true,
+          "region": {"top_left_x": 90, "top_left_y": 140, "width": 80, "height": 24}
+        },
+        {
+          "id": "caption",
+          "type": "page_footer",
+          "line": 2,
+          "text": "footer",
+          "text_display": "footer",
+          "conversion_output": false
+        }
+      ]
+    },
+    {
+      "image-id": "sample-1",
+      "page": 1,
+      "page_height": 2100,
+      "page_width": 1500,
+      "lines": [
+        {
+          "id": "text",
+          "type": "text",
+          "line": 1,
+          "text": "Alpha carries \\pagebreak in its example.",
+          "text_display": "Alpha carries `\\pagebreak` in its example.",
+          "conversion_output": true,
+          "region": {"top_left_x": 90, "top_left_y": 140, "width": 660, "height": 22}
+        }
+      ]
+    },
+    {
+      "image-id": "sample-2",
+      "page": 2,
+      "page_height": 2100,
+      "page_width": 1500,
+      "lines": []
+    }
+  ]
+}

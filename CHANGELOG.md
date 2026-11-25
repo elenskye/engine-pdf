@@ -2,6 +2,16 @@
 
 每个发出去的版本（tag `v<版本>`）：公共接口变化、App 升级要改什么。
 
+## v0.3.0
+
+本机 OCR 和 Mathpix。
+
+- **本机 OCR**：`Document::ocr`、`ocr::warm_up`、`OcrOptions`（默认简体、繁体、英文）。结果有按阅读顺序拼好的文字（两栏、多栏、通栏标题都排对）、逐行置信度和框（原 PDF 坐标）。
+- **逐页读取**：`ReadOptions { ocr: Ocr::auto(), .. }` 让文字层不够或乱码的页走 OCR。新增 `Content::Ocr`、`NoTextReason::NothingRecognized`、`Error::Ocr`、`Summary::ocr`。`Ocr`、`ReadOptions` 不再是 `Copy`，要复制时 `clone()`。
+- **Mathpix**：`quote` / `quote_with_options` 本地报价（不联网），确认后 `run`；或分步 `submit`（`Submitted` 可序列化）/ `wait` / `fetch` / `delete`；Word 用 `submit_file`。成功、失败都带 `Usage`，结果映射回原页码（`Mapping::Exact` / `Approximate`）。错误是 `Error::Mathpix(MathpixError)`。
+- **日志**：引擎在编译期关掉 `log` 的 TRACE（`ureq` 会在 TRACE 里记下密钥），用同一个 `log` 的 App 也跟着没有 TRACE，DEBUG 及以上照常（`decisions/0006`）。
+- **测试工具**：feature `fake`（`FakeTransport::scripted` / `echo`，给 App 的模拟模式）；`samples::scan` 把任意一页做成仿扫描件；`probe` 加 `--ocr`、`--mathpix <页码>`；`examples/make_scan`。
+
 ## v0.2.0
 
 首个可用版本：本机读取。

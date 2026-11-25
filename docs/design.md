@@ -1,6 +1,6 @@
 # engine-pdf 设计稿
 
-> 依据 `docs/brief.md`，选型见 `docs/decisions/`。**v0.2.0 已实现本机部分**（§1 除 OCR、Mathpix，§2.1–2.2、2.4–2.5）；Vision OCR（§2.3）和 Mathpix（§3）是 v0.3.0 的设计；§4 是各 App 的接入计划。
+> 依据 `docs/brief.md`，选型见 `docs/decisions/`。§1–3 已实现（v0.2.0 本机读取，v0.3.0 本机 OCR 和 Mathpix）；§4 是各 App 的接入计划；§6 是实测结论。
 
 ## 0. 现状
 
@@ -24,11 +24,12 @@
 
 ```text
 engine_pdf
-├── Document          打开、页数、页标签、单页文字层、单页页图、拆页
+├── Document          打开、页数、页标签、单页文字层、单页页图、拆页、单页 OCR
 ├── read / read_each  逐页读取 + 分类（文字层 / OCR / 空白 / 没取到字 / 失败）
 ├── pages::parse      "3"、"1-5"、"1,3-4"、"4-" → 页码
 ├── Cancel            取消令牌（可克隆，跨线程）
 ├── Error             错误种类 + 一句中文
+├── ocr               Vision 预热和识别类型
 ├── mathpix           （v0.3.0）Quote（本地报价）→ run（上传识别）；分步 submit / wait / fetch / delete
 └── samples           （feature "samples"）测试样本生成器和手写最小 PDF 的 raw_pdf，App 的测试也能用
 ```
@@ -41,6 +42,7 @@ doc.page_count();                        // u32
 doc.label(8);                            // Option<String>：第 8 页印的页码（/PageLabels），如 "vi"；没定义时 PDFKit 给 "8"
 doc.text(8)?;                            // String：PDFKit 原始文字层，扫描页为空字符串
 doc.render(8, ImageFormat::Png, 1568)?;   // Image：白底，画 CropBox（阅读器显示的范围），带旋转，最长边 1568 像素
+doc.ocr(8, &OcrOptions::default())?;      // OcrText：主动使用 Vision 识别，why 为 Requested
 doc.image_counts(&cancel)?;              // Vec<(u32, usize)>：有图片资源的物理页和数量
 doc.split(&[8, 2, 8], &cancel)?;          // Vec<u8>：按指定顺序复制页面，允许重复
 ```
@@ -55,17 +57,18 @@ doc.split(&[8, 2, 8], &cancel)?;          // Vec<u8>：按指定顺序复制页�
 | `PageOutOfRange { page, total }` | 页码超出 | 这份 PDF 只有 {total} 页，没有第 {page} 页。 |
 | `BadPageSpec(String)` | `pages::parse` 不接受的选页 | 引擎写的固定提示（格式、范围反向、超上限），**不回显输入原文**（防止粘进来的路径、密钥进提示） |
 | `Render { page }` | 单页画不出 | 第 {page} 页画不出来。 |
+| `Ocr { page }` | Vision 单页识别失败 | 第 {page} 页识别失败。 |
 | `Cancelled` | 取消 | 已停止。 |
 | `Unsupported` | 非 macOS | 只有 Mac 上能读 PDF。 |
 | `Io(io::Error)` | 读文件 | 读不了这个文件。 |
 
-v0.3.0 再加 `Ocr { page }` 和 `Mathpix(MathpixError)`（§3.6）。要打开密码的 PDF 只报 `Locked`，不做解锁；只设了权限密码（禁止复制等）的照常读。截断一半的文件报 `Damaged`；只坏了尾部目录的，PDFKit 会自己修好照常读。
+`Mathpix(MathpixError)` 的种类见 §3.6。要打开密码的 PDF 只报 `Locked`，不做解锁；只设了权限密码（禁止复制等）的照常读。截断一半的文件报 `Damaged`；只坏了尾部目录的，PDFKit 会自己修好照常读。
 
 ### 1.3 逐页读取
 
 ```rust
 pub struct ReadOptions {
-    pub ocr: Ocr,                   // Off | （v0.3.0）Auto(OcrOptions)：文字层不够或是乱码的页，用 Vision 在本机识别
+    pub ocr: Ocr,                   // Off | Auto(OcrOptions)：文字层不够或是乱码的页，用 Vision 在本机识别
     pub render: Option<Render>,     // 要不要页图：全部或 NoText、最长边、JPEG/PNG/灰度、最多几张
     pub text_min_chars: usize,      // 少于这么多个非空白字符，文字层不足以代表整页（默认 20，沿用 Peck、Pith）
     pub blank_max_dark_fraction: f64,  // 64px 灰度小图里深色像素（< 240）少于这个比例算几乎全白（默认 0.2%）
@@ -89,19 +92,19 @@ pub struct Page {
 
 pub enum Content {
     Text(String),                 // 文字层能代表这一页（PDFKit 原样，不整理）；也包括除了几个字别无他物的页（只有页码、一句话）
-    Ocr(OcrText),                 // （v0.3.0）本机 Vision 识别的字 + why（NoTextLayer / Garbled）+ 平均置信度 + 每行文字和框
+    Ocr(OcrText),                 // 本机 Vision 识别的字 + why（NoTextLayer / Garbled）+ 平均置信度 + 每行文字和框
     Blank,                        // 空白页：没有文字层，页面几乎全白（不跑 OCR）
-    NoText { reason, partial },   // 有画面但没取到能代表它的字：OcrOff / Garbled（v0.3.0 加 NothingRecognized）；
+    NoText { reason, partial },   // 有画面但没取到能代表它的字：OcrOff / Garbled / NothingRecognized；
                                   // partial 是文字层里那几个字（标题、图注），不丢；乱码时为空
     Failed(Error),                // 这一页读失败；其他页照常
 }
 ```
 
 - `read`、`read_each` 按传入数组的顺序处理，重复页照常处理；越界页交 `Failed(PageOutOfRange)` 后接着读（`pages::parse` 出来的本来就排序去重）。
-- `read_each` 回调返回 `Flow::Stop` 就停，交回 `Summary`（已读页数、各类页数、附图数）。
+- `read_each` 回调返回 `Flow::Stop` 就停，交回 `Summary`（已读页数、各类页数、附图数，其中 `ocr` 统计识别出的页）。
 - `Render::jpeg / png / gray(max_side)`，可加 `.only_no_text()`、`.at_most(n)`。`Gray` 是 8 位像素，左上起逐行、每行 `width` 字节，0 黑 255 白，空白判定和 OCR 直接用。
 
-App 怎么分辨四种情况：`Text` = 原文、`Ocr` = 识别结果（可能有错字）、`Blank` = 空白、`Failed` = 读取失败；整份打不开在 `Document::open` 就返回 `Err`。`OcrText.lines` 的框是 PDF 坐标（左下原点、单位 pt），和 PDF.js 的 `convertToPdfPoint` 同一套，Pith 以后要在阅读器里高亮 OCR 结果可以直接用。
+整份打不开时 `Document::open` 返回 `Err`。`OcrText.lines` 的框在原 PDF 坐标系中（左下原点、单位 pt、包含 CropBox 偏移，并换回页面原旋转前的方向）。它与 PDF.js 的 `convertToPdfPoint` 使用同一坐标系，App 可以用来标示识别结果。
 
 ### 1.4 页码
 
@@ -112,7 +115,7 @@ App 怎么分辨四种情况：`Text` = 原文、`Ocr` = 识别结果（可能�
 
 ### 1.5 取消与进度
 
-`Cancel` 用 `Arc<AtomicBool>` 跨线程共享。App 在任何线程调用 `cancel.cancel()`，本机读页、拆页和图片计数在每页开始前检查，发现取消时返回 `Error::Cancelled`。PDFKit 正在处理的单页会完成。`read_each` 每交付一页就调用回调。Vision 和 Mathpix 的取消检查随 v0.3.0 实现。接入 Peck 时可以等 `watch::Receiver<bool>::wait_for` 后调用 `cancel.cancel()`。
+`Cancel` 用 `Arc<AtomicBool>` 跨线程共享。App 在任何线程调用 `cancel.cancel()`，本机读页、拆页和图片计数在每页开始前检查，发现取消时返回 `Error::Cancelled`。PDFKit 和 Vision 正在处理的单页会完成。`read_each` 在单页 OCR 前后也检查取消，发现取消就停止交付。接入 Peck 时可以等 `watch::Receiver<bool>::wait_for` 后调用 `cancel.cancel()`。
 
 ### 1.6 Peck 调用示例
 
@@ -141,7 +144,7 @@ for p in read(&doc, &wanted, &opts, &cancel)? {
 // ocr_pdf：先报价（不联网）→ Peck 的批准框 → 才上传
 let quote = mathpix::quote(&doc, &wanted)?;                          // { service: "Mathpix", pages: [8], usd: 0.005 }
 let ok = approve_as(ToolKind::Other, call_id, format!("送 Mathpix 识别第 {} 页？", quote.pages_text()),
-                    format!("预计 ${:.3}（每页 $0.005），只上传这几页，读完删掉 Mathpix 那边的", quote.usd)).await;
+                    format!("预计 ${:.3}（每页 $0.005），只上传这几页，读完删掉 Mathpix 那边的", quote.usd())).await;
 if !ok.allowed() { return ReadOut::of(ToolStatus::Denied, "站主没同意上传。".into()); }   // 没发任何请求
 let done = spawn_blocking(move || {
     let doc = Document::open(&file)?;
@@ -186,12 +189,12 @@ match done {
 
 ### 2.3 Vision：本机 OCR（新写）
 
-- `VNRecognizeTextRequest`：`recognitionLevel = accurate`、`usesLanguageCorrection = true`、`recognitionLanguages` 默认 `["zh-Hans", "zh-Hant", "en-US"]`（`OcrOptions` 可改）。`VNImageRequestHandler(cgImage:)` 的 `performRequests` 是同步的，正好配同步接口。完全在本机跑，不联网。
-- 输入：页面用 CoreGraphics 画成灰度 `CGImage`，最长边默认 2400px（Pomelo 给模型看图用的也是 2400），白底。
+- `VNRecognizeTextRequest` 用准确模式和语言纠正。`OcrOptions` 默认 `["zh-Hans", "zh-Hant", "en-US"]`，调用方可指定语言。macOS 13 及以上为多语言请求开启自动检测，让 Vision 区分中文和拉丁文字。`VNImageRequestHandler(cgImage:)` 在本机同步执行。
+- 输入：页面用 CoreGraphics 画成白底灰度 `CGImage`，最长边 2400px（Pomelo 给模型看图用的也是 2400）。
 - 输出：每个 `VNRecognizedTextObservation` 取 `topCandidates(1)`，得到文字、置信度、框；框从 Vision 的归一化坐标换成 PDF 坐标。
-- **阅读顺序**：Vision 不保证两栏的顺序（真实知网双栏页实测会左右行交错）。引擎按行框排：先找有没有竖直的栏缝（页面中部一条没有行跨过的竖带，两边都有足够多行），有就左栏从上到下、再右栏；没有就整页从上到下、同一行从左到右。
+- **阅读顺序**（`src/ocr/order.rs`）：Vision 不保证栏的顺序（真实知网双栏页、杂志四栏页实测都会左右行交错）。引擎递归切块：一块里先找竖直栏缝（两边各有几行正文、上下并排；跨过栏缝的只能是上面的通栏标题或下面的页脚），有就按「通栏标题、左、右、页脚」分开再各自递归；没有就在比一行字高还宽的横向空白处上下分开；都没有就是一块正文，从上到下、同一行从左到右（表格的一行格子接在一起）。两栏、四栏、中间插图的杂志页都排对了。
 - 不用 macOS 26 只有 Swift 能调的 `RecognizeDocumentsRequest`：实测它会把左右栏的行并进同一段（`decisions/0005`）。
-- 耗时：热启动 0.15–0.8 s/页（1568px）；系统第一次加载模型约 17 s，所以给 `ocr::warm_up()`。
+- 系统第一次加载识别模型要 16–33 s，App 可以启动时在后台调 `ocr::warm_up()`。之后每页 0.1–0.6 s。
 
 ### 2.4 一页怎么分类
 
@@ -202,7 +205,7 @@ match done {
    │                                └ 没有 ──────────→ Blank
    ├─ ocr = Off ──────────────────→ NoText { OcrOff 或 Garbled, partial }
    │
-   └─ （v0.3.0）Vision 识别 ─ 认出字 ─→ Ocr(why = NoTextLayer 或 Garbled)
+   └─ Vision 识别 ─ 认出字 ─→ Ocr(why = NoTextLayer 或 Garbled)
                            └ 没认出 ─→ NoText { NothingRecognized, partial }
 任何一步出错 ──────────────────────→ Failed(Error)，接着读下一页
 ```
@@ -212,7 +215,8 @@ match done {
 ### 2.5 长文档与耗时
 
 - 页图随回调逐页交出，`read_each` 不攒结果；`read` 只给页数少的场景（Peck 一次最多 20 页）。每页一个 autorelease pool。
-- 实测（M3 Pro、Release）：29 篇真实论文共 535 页，取字加分类每份 30–220 ms（每页约 2–10 ms）；真实论文画 1568px JPEG 约 40 ms/页（35 页 1.4 s）。生成的 300 页样本取字加分类共约 35 ms，中途取消在下一页前停下。Vision 的耗时 v0.3.0 测。
+- 本机读取实测（M3 Pro、Release）：29 篇真实论文共 535 页，取字加分类每份 30–220 ms（每页约 2–10 ms）。真实论文画 1568px JPEG 约 40 ms/页（35 页 1.4 s）。生成的 300 页样本取字加分类共约 35 ms，中途取消在下一页前停下。
+- Vision（M3 Pro）：首次加载模型 16–33 s；之后生成样本每页 0.1–0.3 s、真实扫描页 0.4–0.6 s。用 `sandbox-exec` 禁网跑过，照常识别。
 - 引擎不并行：一次一页。App 想同时处理几份文件自己开几个阻塞任务；资源约束下不建议同时跑两份 OCR。
 
 ---
@@ -228,20 +232,13 @@ App: 显示「Mathpix · 原文件第 8 页 · 预计 $0.005」，查自己的�
      └─ 站主确认 → mathpix::run(&doc, &quote, &keys, &opts, &cancel, &progress)
 ```
 
-```rust
-pub struct Quote {
-    pub service: &'static str,      // "Mathpix"
-    pub pages: Vec<u32>,            // 原文件页码，升序去重；就是要上传的那几页
-    pub price_per_page: f64,        // 默认 0.005，App 可在 Options 里覆盖（Pith 有自己的价目设置）
-    pub usd: f64,                   // pages.len() × price_per_page
-}
-```
+`Quote` 的 `service()`、`pages()`、`price_per_page()` 和 `usd()` 用于确认框。页码升序去重，单价默认 $0.005。`quote_with_options` 使用 App 提供的 `Options::price_per_page`。确认后继续使用同一份报价，待上传页和记账单价均取自报价。
 
 `run` 只上传 `quote.pages`，不会多传。确认框里显示什么、怎么措辞、预算怎么查，全是 App 的事。
 
 ### 3.2 密钥、记账
 
-- **密钥**：App 从自己的钥匙串取出来，`Keys { app_id, app_key }`（`Zeroizing`）每次调用交进来。引擎不存、不写日志，错误里不带。
+- **密钥**：App 从自己的钥匙串取出来，构造 `Keys::new(app_id, app_key)`（`Zeroizing`）交进来。可序列化的续跑任务不含密钥。
 - **记账**：引擎不知道预算，只如实交回 `Usage`，成功、失败都有：
 
 ```rust
@@ -259,9 +256,9 @@ App 照旧记进自己的账本：Peck 记成 `Fee::Ocr`，Pith 交给 `meter.re
 ### 3.3 拆页、上传、下载
 
 1. **拆页**：`quote.pages` 是全份时直接传原件字节；否则用 PDFKit 拆出只有这几页的新 PDF（内存里，不落盘），核对页数等于 `quote.pages.len()`。
-2. **上传**：`POST /v3/pdf`，multipart（`options_json` + `file`），文件名固定 `pages.pdf`（不带本机路径）。选项固定带 `include_page_breaks: true`（映射页码要用）和 `metadata.improve_mathpix: false`（不让 Mathpix 拿去训练）；`Options` 可加 `lines`（要 `lines.json`）、`mmd_zip`（要带裁图的压缩包）、公式分隔符（Peck 用 `$`）和其他原样透传的字段。
+2. **上传**：`POST /v3/pdf`，multipart（`options_json` + `file`），文件名固定 `pages.pdf`（不带本机路径）。选项固定带 `include_page_breaks: true` 和 `metadata.improve_mathpix: false`。`Options` 可选行数据、裁图压缩包和公式分隔符。额外字段允许透传，选页、分页标记、数据留存和请求方式由引擎控制。
 3. **等**：每 2 秒 `GET /v3/pdf/{id}`，读 `status`、`percent_done`、`num_pages`；最长等 `Options.max_wait`（默认 10 分钟）。注意 Mathpix 的错误常常是 HTTP 200 带 `error_info`，每次都看 body（Peck 的教训）。
-4. **下载**：`.mmd` 必取；要了才取 `.lines.json`、`.mmd.zip`（202 = 还没打包好，过一会儿再取，Pomelo 的做法）。
+4. **下载**：`.mmd` 必取。按提交时设置下载 `.lines.json`、`.mmd.zip`。行数据缺失时按可用结果映射。ZIP 返回 202 时按 `Retry-After` 或轮询间隔重试，等待可取消、有上限。见 [Mathpix PDF 接口文档](https://docs.mathpix.com/reference/post-v3-pdf)。
 5. **删除**：不管成败，只要拿到过 `pdf_id` 就 `DELETE /v3/pdf/{id}`，结果写进 `usage.remote_deleted`。
 
 `/v3/converter`（Pomelo 把 mmd 转 docx 等）不进引擎，留在 Pomelo。
@@ -289,14 +286,15 @@ pub struct Recognized {
 Pomelo 的规矩是「每次上传都收费，`pdf_id` 一拿到就存进任务，继续时只等和下载」。所以 `run` 拆成四步也公开：
 
 ```rust
-let sub: Submitted = mathpix::submit(&doc, &quote, &keys, &opts, &cancel)?;   // 可序列化：{ pdf_id, page_map, pages_sent, options }
+let mut sub: Submitted = mathpix::submit(&doc, &quote, &keys, &opts, &cancel)?;
 // App 立刻把 sub 存进自己的任务文件
-mathpix::wait(&sub, &keys, &opts, &cancel, &progress)?;
-let r = mathpix::fetch(&sub, &keys, &opts)?;
-mathpix::delete(&sub, &keys);                                                    // -> bool
+mathpix::wait(&mut sub, &keys, &opts, &cancel, &progress)?;
+// App 保存已确认页数的 sub，之后可以继续下载
+let r = mathpix::fetch(&sub, &keys, &opts, &cancel)?;
+mathpix::delete(&sub, &keys, &opts);                                              // -> bool
 ```
 
-Pomelo 上传 Word 文件走 `mathpix::submit_file(bytes, mime, ...)`：不拆页、没有页码映射（`page_map` 为空，结果标 `Approximate`）。
+Pomelo 上传 Word 用 `mathpix::submit_file(bytes, mime, estimated_pages, &keys, &opts, &cancel)`。结果保留整份 MMD 和可选 ZIP，原始页码为空并标为 `Approximate`。App 可提供预计页数。页数未知且服务没有返回时，`pages_billed` 为 0、`estimated` 为 `true`。
 
 ### 3.6 取消、失败怎么收尾
 
@@ -313,9 +311,9 @@ Pomelo 上传 Word 文件走 `mathpix::submit_file(bytes, mime, ...)`：不拆�
 
 ### 3.7 HTTP 与测试替身
 
-- 引擎自带同步 HTTP：`ureq` 3（native-tls，Pith 在用），走 `Transport` trait。App 有特殊网络需求（比如要用系统代理）可以自己实现 `Transport` 交进来。
-- feature `fake` 给 `FakeTransport`：按脚本回应、记下每个请求。引擎自己的测试用它核对「取消时零请求」「上传件只有一页」「失败也 DELETE」；三个 App 的模拟模式（Peck `Mathpix::Mock`、Pith `mock_mode`、Pomelo 的 mock）也换成它的 `FakeTransport::echo()`：把上传件每页的 PDFKit 文字当成识别结果，不联网、不记费。
-- 只允许 `https://api.mathpix.com`；`Options.base` 只为测试放开 `http://127.0.0.1`（Pith 有 `mathpix_base` 设置）。
+- 引擎自带同步 HTTP，使用 `ureq` 3 和系统 TLS，走 `Transport` trait。构建时关闭 `log` 的 TRACE，避免原始 HTTP 字节进入日志。影响范围见 [决策 0006](decisions/0006-mathpix-trace-logging.md)。App 有特殊网络需求可以自己实现 `Transport`。
+- App 用 `Options::transport` 注入自定义传输。`fake` feature 提供 `FakeTransport`，可按脚本回应并记录请求，或用 `FakeTransport::echo()` 回显上传 PDF 的文字层。回显模式本地生成 MMD、行数据和 ZIP，Word 使用模拟文字，模拟用量为零。
+- 生产请求固定使用 `https://api.mathpix.com`。`Options::base` 另接受测试用 `http://127.0.0.1`。续跑沿用任务的地址、输出设置和账单基准。分步接口的清理由 App 负责。
 
 ---
 
@@ -379,7 +377,7 @@ Pomelo 上传 Word 文件走 `mathpix::submit_file(bytes, mime, ...)`：不拆�
 | 300 页 | `tests/read.rs` 里把 `mixed` 拆页重复 30 次 | 连续交付与中途取消 |
 | 边界页 | `samples::raw_pdf` 手写：旋转、CropBox、只有页码或一句标题的页 | 页图范围、短文字不丢 |
 
-真实世界的文件（站主自己的中文扫描书、双栏论文）只放 `local/` 做人工抽查；要一份可提交的公开双栏论文的话，届时问站主（下载要同意，来源和许可证记进 `samples/README.md`）。
+真实世界的文件（站主自己的扫描件、论文）只放 `local/` 做人工抽查。`samples::scan(&doc, page)` 把任意一页画成只有图的仿扫描 PDF；`cargo run --features samples --example make_scan -- <PDF> <页码>` 用它把真实论文的一页做成仿扫描件，原文字层另存成标准答案（都在 `local/scans/`），算 OCR 字错率。
 
 ### 5.2 场景
 
@@ -394,8 +392,21 @@ Pomelo 上传 Word 文件走 `mathpix::submit_file(bytes, mime, ...)`：不拆�
 
 ---
 
-## 6. v0.2.0 实测结论
+## 6. 实测结论
 
-- **和 Peck 现在的读法逐字一致**：29 篇真实论文（中英文、单双栏）535 页，引擎的文字层和 Peck 现有 JXA 读出来的完全相同——v0.4.0 换 Peck 时文字不会变。
-- 中文知网论文、英文双栏论文的文字层顺序正常（左栏读完再右栏）；PDFKit 原样交出连字（`ﬀ`）和全角数字，整理归 App。
-- 还要用样本或真实文件验的：Vision 中文准确率和双栏扫描的顺序（§2.3）；真实 Mathpix 回应里 `\pagebreak` 和页数对不对得上（§3.4）；PDFKit 页标签和 PDF.js 是否一致（v0.5.0 接 Pith 时）。
+**本机读取（v0.2.0）**
+
+- 和 Peck 现在的读法逐字一致：29 篇真实论文（中英文、单双栏）535 页，引擎的文字层和 Peck 现有 JXA 读出来的完全相同——换 Peck 时文字不会变。
+- 中文知网论文、英文双栏论文的文字层顺序正常；PDFKit 原样交出连字（`ﬀ`）和全角数字，整理归 App。
+
+**本机 OCR（v0.3.0）**
+
+- 站主给的真实扫描图（《经济学人》两栏、四栏页，繁体中文长文）：栏序全对；繁体整段几乎无错（一页约 3 处，如「〇」认成「•」）。
+- 仿扫描件按整页（含页眉、脚注、全半角差异）算字错率：英文约 3%，简体中文 9–11%。Vision 常漏「的」（一页 57 个漏 14 个左右），换分辨率、关语言纠正、关自动检测都一样，是 Vision 本身的限制；要逐字准确的页交给 Mathpix。
+- 简体页不会被认成繁体，繁体页保持繁体，默认语言（简、繁、英）不用改。
+
+**Mathpix（v0.3.0）**
+
+- 真跑 `mixed` 第 3（空白）、5（中文扫描）、8（公式和表格）页：三页都精确映射回原页码，空白页交回空内容，公式是正确的 LaTeX，表格完整；远端已删；共 $0.015。另有一次单页（第 8 页）真跑，$0.005。
+
+**还要验的**：PDFKit 页标签和 PDF.js 是否一致（接 Pith 时）；真实 App 里的确认框、断网、安装包（接各 App 时）。

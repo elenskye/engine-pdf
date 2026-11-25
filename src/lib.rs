@@ -5,6 +5,8 @@
 mod cancel;
 mod document;
 mod error;
+pub mod mathpix;
+pub mod ocr;
 pub mod pages;
 mod read;
 #[cfg(feature = "samples")]
@@ -14,6 +16,7 @@ mod sys;
 pub use cancel::Cancel;
 pub use document::{Document, Image, ImageFormat};
 pub use error::Error;
+pub use ocr::{OcrBounds, OcrLine, OcrOptions, OcrReason, OcrText};
 pub use read::{
     Content, Flow, NoTextReason, Ocr, Page, ReadOptions, Render, Summary, read, read_each,
 };
@@ -25,6 +28,6 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 mod tests {
     #[test]
     fn version_matches_manifest() {
-        assert_eq!(super::VERSION, "0.2.0");
+        assert_eq!(super::VERSION, "0.3.0");
     }
 }

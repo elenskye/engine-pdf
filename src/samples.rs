@@ -84,6 +84,12 @@ impl Sample {
     }
 }
 
+/// 仿扫描件：把 `doc` 的第 `page` 页画成灰度图（最长边 2400 像素），做成一份只有图、没有文字层的单页 PDF。
+/// 原页的文字层（[`Document::text`]）就是 OCR 的标准答案。非 macOS 返回 `Error::Unsupported`。
+pub fn scan(doc: &crate::Document, page: u32) -> Result<Vec<u8>, Error> {
+    doc.scan(page)
+}
+
 /// 手写一份最小的 PDF，给生成器画不出来的边界情况用（页标签、旋转、CropBox、只有几个字的页）。
 ///
 /// - `catalog_extra`：加进 Catalog 字典的条目，如 `/PageLabels << … >>`；不需要就给 `""`。

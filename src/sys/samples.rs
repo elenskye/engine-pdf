@@ -12,8 +12,8 @@ use objc2_core_graphics::{
 use objc2_core_text::{CTFont, CTLine, kCTFontAttributeName};
 
 use super::pdf::Pdf;
-use crate::Error;
 use crate::samples::{LABEL_TEXT, LOCKED_PASSWORD, Page, Sample, raw_pdf};
+use crate::{Error, ImageFormat};
 
 const WIDTH: usize = 612;
 const HEIGHT: usize = 792;
@@ -37,6 +37,24 @@ pub(crate) fn generate(sample: Sample) -> Result<Vec<u8>, Error> {
             }
         }
     }
+}
+
+/// 仿扫描件：把一页画成最长边 2400 像素的灰度图，再贴进一份只有图、没有文字层的单页 PDF。
+pub(super) fn scan_page(page: &objc2_pdf_kit::PDFPage, index: u32) -> Result<Vec<u8>, Error> {
+    let error = || Error::Render { page: index };
+    let (bitmap, size) = super::render::draw_page(page, index, ImageFormat::Gray, 2400)?;
+    let image = CGBitmapContextCreateImage(Some(&bitmap)).ok_or_else(error)?;
+    let data = CFMutableData::new(None, 0).ok_or_else(error)?;
+    let consumer = CGDataConsumer::with_cf_data(Some(&data)).ok_or_else(error)?;
+    let media_box = rect(0.0, 0.0, size.width, size.height);
+    // SAFETY: media_box 在调用期间有效，使用默认 PDF 文档属性。
+    let pdf = unsafe { CGPDFContextCreate(Some(&consumer), &media_box, None) }.ok_or_else(error)?;
+    // SAFETY: pdf 是有效的 PDF context，当前没有打开的页，沿用默认页属性。
+    unsafe { CGPDFContextBeginPage(Some(&pdf), None) };
+    CGContext::draw_image(Some(&pdf), media_box, Some(&image));
+    CGPDFContextEndPage(Some(&pdf));
+    CGPDFContextClose(Some(&pdf));
+    Ok(data.to_vec())
 }
 
 fn draw_pdf(sample: Sample) -> Result<Vec<u8>, Error> {

@@ -3,10 +3,10 @@ use objc2::rc::{Retained, autoreleasepool};
 use objc2_foundation::{NSCopying, NSData};
 use objc2_pdf_kit::{PDFDocument, PDFPage};
 
-use crate::{Cancel, Error, Image, ImageFormat};
+use crate::{Cancel, Error, Image, ImageFormat, OcrBounds, OcrLine, OcrOptions};
 
 // PDFDocument 自身 !Send / !Sync。
-pub(crate) struct Pdf(Retained<PDFDocument>);
+pub(crate) struct Pdf(Retained<PDFDocument>, Retained<NSData>);
 
 impl Pdf {
     pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
@@ -26,7 +26,7 @@ impl Pdf {
             if unsafe { document.isLocked() } {
                 return Err(Error::Locked);
             }
-            let pdf = Self(document);
+            let pdf = Self(document, data);
             // PDFKit 有时为坏文件返回零页文档。
             if pdf.page_count() == 0 {
                 return Err(Error::Damaged);
@@ -38,6 +38,11 @@ impl Pdf {
     pub(crate) fn page_count(&self) -> u32 {
         // SAFETY: 在文档所属的线程查询页数。
         unsafe { self.0.pageCount() as u32 }
+    }
+
+    pub(crate) fn original_bytes(&self) -> &[u8] {
+        // SAFETY: from_bytes 创建的 NSData 是固定长度的只读副本，并与文档一起存活。
+        unsafe { self.1.as_bytes_unchecked() }
     }
 
     pub(crate) fn label(&self, page: u32) -> Option<String> {
@@ -60,6 +65,16 @@ impl Pdf {
     ) -> Result<Image, Error> {
         self.with_page(page, |native_page| {
             super::render::render(native_page, page, format, max_side)
+        })
+    }
+
+    pub(crate) fn ocr(
+        &self,
+        page: u32,
+        options: &OcrOptions,
+    ) -> Result<Vec<(OcrLine, OcrBounds)>, Error> {
+        self.with_page(page, |native_page| {
+            super::ocr::recognize_page(native_page, page, options)
         })
     }
 
@@ -104,6 +119,13 @@ impl Pdf {
             // SAFETY: 物理页码已检查，PDFKit 用从 0 起的下标，文档和页面均在当前线程。
             let page = unsafe { self.0.pageAtIndex((page - 1) as usize) }.ok_or(Error::Damaged)?;
             action(&page)
+        })
+    }
+
+    #[cfg(feature = "samples")]
+    pub(crate) fn scan(&self, page: u32) -> Result<Vec<u8>, Error> {
+        self.with_page(page, |native_page| {
+            super::samples::scan_page(native_page, page)
         })
     }
 

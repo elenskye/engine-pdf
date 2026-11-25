@@ -1,6 +1,8 @@
 #[cfg(target_os = "macos")]
 mod image_counts;
 #[cfg(target_os = "macos")]
+mod ocr;
+#[cfg(target_os = "macos")]
 mod pdf;
 #[cfg(target_os = "macos")]
 mod render;
@@ -8,11 +10,13 @@ mod render;
 mod samples;
 
 #[cfg(target_os = "macos")]
+pub(crate) use ocr::warm_up;
+#[cfg(target_os = "macos")]
 pub(crate) use pdf::Pdf;
 #[cfg(not(target_os = "macos"))]
 mod unsupported;
 #[cfg(not(target_os = "macos"))]
-pub(crate) use unsupported::Pdf;
+pub(crate) use unsupported::{Pdf, warm_up};
 
 #[cfg(feature = "samples")]
 pub(crate) use samples::generate;

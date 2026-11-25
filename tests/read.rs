@@ -149,6 +149,7 @@ fn reads_300_mixed_pages_and_honors_cross_thread_cancellation() {
         Summary {
             processed: 300,
             text: 120,
+            ocr: 0,
             blank: 60,
             no_text: 120,
             failed: 0,

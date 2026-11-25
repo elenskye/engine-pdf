@@ -15,6 +15,10 @@ pub enum Error {
     Render {
         page: u32,
     },
+    Ocr {
+        page: u32,
+    },
+    Mathpix(crate::mathpix::MathpixError),
     Cancelled,
     Unsupported,
     Io(io::Error),
@@ -31,6 +35,8 @@ impl fmt::Display for Error {
             }
             Self::BadPageSpec(message) => f.write_str(message),
             Self::Render { page } => write!(f, "第 {page} 页画不出来。"),
+            Self::Ocr { page } => write!(f, "第 {page} 页识别失败。"),
+            Self::Mathpix(error) => error.fmt(f),
             Self::Cancelled => f.write_str("已停止。"),
             Self::Unsupported => f.write_str("只有 Mac 上能读 PDF。"),
             Self::Io(_) => f.write_str("读不了这个文件。"),
@@ -42,6 +48,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
+            Self::Mathpix(error) => Some(error),
             _ => None,
         }
     }
