@@ -1,6 +1,6 @@
 # HANDOFF
 
-更新：2026-11-25 · v0.3.0 已发版（tag `v0.3.0`）· Claude Code 拟定 v0.5–v0.8 计划
+更新：2026-11-25 · v0.4.0 已发版（tag `v0.4.0`，只含默认每页附图）· Claude Code 拟定 v0.5–v0.8 计划
 
 ## 现在在哪
 
@@ -60,6 +60,7 @@ cargo run --release --example probe -- samples/out/mixed.pdf --mathpix 3,5,8 --t
 
 ## 等你
 
+1. **v0.4.0 已先发版**（站主定）：v0.5.0 可以开工。
 1. **看 v0.5–v0.7 的计划**：`ROADMAP.md`（Phase 表）、`docs/design.md` §7、§8（接口草案）。你在提问里定的都写进去了；看过说一声就能开工。
 2. **push**：`main` 有这一轮的新 commit；`v0.3.0` 的 tag 要是还没推，一起推：
 
@@ -68,12 +69,12 @@ cargo run --release --example probe -- samples/out/mixed.pdf --mathpix 3,5,8 --t
    ```
 
    ```bash
-   git push origin v0.3.0
+   git push origin v0.4.0
    ```
 
-3. **Peck 1.1.12 做完、提交后**告诉我们一声，v0.4.0 才能开工。Peck 要是拖得久：可以先把 v0.4.0 里已做的引擎改动（默认每页附图）单独发版，让 v0.5 先开工，Peck 接入时再发现的问题走之后的小版本。要这样做的话说一声。
+3. **Peck 1.1.12 做完、提交后**告诉我们一声，v0.4.0 才能开工。Peck 接入钉当时最新的 tag，接入中发现的引擎问题跟着当期版本发。
 
 ## 下一轮
 
 1. Peck 1.1.12 提交后 → 让 Codex 在 Peck 仓库做 v0.4.0：「读 engine-pdf 的 AGENTS.md、HANDOFF.md、ROADMAP.md『v0.4.0 接 Peck』，再读 Peck 的 CLAUDE.md；照步骤 1–5 做，Peck 的改动守 Peck 的规矩，引擎的改动在 engine-pdf 做；做完两边都写 HANDOFF」。Codex 做完回到 Claude 审核、commit、打 tag。
-2. v0.4.0 打 tag、站主批了计划之后 → Codex 做 v0.5.0 Phase 1：「读 AGENTS.md、HANDOFF.md、ROADMAP.md『v0.5.0』、design §7、decisions/0009；做 Phase 1（PDFKit 写盘实测、页标签对照、改动单类型、新样本），实测结论写进 design §6，改动单类型列进 HANDOFF 等 Claude 审」。
+2. 站主批了计划之后 → Codex 做 v0.5.0 Phase 1：「读 AGENTS.md、HANDOFF.md、ROADMAP.md『v0.5.0』、design §7、decisions/0009；做 Phase 1（PDFKit 写盘实测、页标签对照、改动单类型、新样本），实测结论写进 design §6，改动单类型列进 HANDOFF 等 Claude 审」。

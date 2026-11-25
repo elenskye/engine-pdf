@@ -28,6 +28,6 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 mod tests {
     #[test]
     fn version_matches_manifest() {
-        assert_eq!(super::VERSION, "0.3.0");
+        assert_eq!(super::VERSION, "0.4.0");
     }
 }
