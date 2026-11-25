@@ -1,10 +1,21 @@
 # HANDOFF
 
-更新：2026-11-25 · v0.3.0 已发版（tag `v0.3.0`）· Claude Code 审核
+更新：2026-11-25 · v0.3.0 已发版（tag `v0.3.0`）· Claude Code 拟定 v0.5–v0.8 计划
 
 ## 现在在哪
 
-v0.3.0（本机 OCR + Mathpix）完成：Codex 实施 Phase 1–5，Claude 审核、改进、实测、提交、打 tag。v0.4.0 接 Peck 的计划已写进 `ROADMAP.md`（站主定了：Peck 这边算小幅优化、一轮做完），等 Peck 1.1.10 提交后开工。
+v0.3.0（本机 OCR + Mathpix）完成。v0.4.0 接 Peck 的计划已批，等 Peck 1.1.12（另一个会话在做，Peck 工作区有没提交的改动）提交后开工。
+
+**这轮（只拟计划，没写代码）**：照站主的第二轮简报（`docs/brief-2.md`）和 Pomelo 接入简报（`docs/brief-pomelo.md`），用两轮提问定了方向，把 v0.5–v0.8 的计划写进 `ROADMAP.md`、design §7–§8：
+
+- 顺序（`decisions/0008`）：v0.5 页面与结构 + 预览级编辑 → v0.6 PDFium 级 → v0.7 接 Pomelo（Pomelo 1.1.0）→ v0.8 接 Pith → v1.0。
+- 编辑（`decisions/0009`）：一张改动单 `edit::Plan`，只有引擎（PDFKit）写文件；`web/` 是无样式的 PDF.js 6.5 编辑套件，样子由 App 画；v0.5 用试用页 `examples/studio` 验收，Pith 到 v0.8 再接。
+- PDFium（`decisions/0010`）：先实验；只做移动删除对象、涂黑；可搜索扫描件比过「引擎 OCR + 不可见文字层」和 PDFKit 自带的 `SaveTextFromOCR` 再定；feature `pdfium` 默认关，尽量静态链。
+- Mathpix 转换搬进引擎（`decisions/0011`）。
+- Pomelo（站主定）：扫描件默认识别、已有的也自动补；检索命中就带页图。
+- 查到的：PDF.js 6.5 已有签名、批注编辑器和页面整理（`PagesMapper`、`extractPages`），没有下划线、删除线、形状，要套件自己做；PDFKit 没有真正的涂黑。
+
+改的文件：`ROADMAP.md`（版本表、v0.5–v0.7 Phase 表、v0.8 大纲、验收清单）、`docs/design.md`（§1.1、§2、§3.3、§4.3、§6 小改，新增 §7、§8）、`docs/decisions/0008`–`0011`（新）、`docs/brief-2.md`、`docs/brief-pomelo.md`（简报原件）、`CLAUDE.md`（边界、工程约定、文档表）、`README.md`（一行）、本文件。
 
 ## v0.4.0 已先做的引擎改动（2026-11-25，站主定）
 
@@ -12,7 +23,7 @@ v0.3.0（本机 OCR + Mathpix）完成：Codex 实施 Phase 1–5，Claude 审�
 - 测试：`./scripts/check.sh` 通过，Linux 编译检查通过。真实论文 35 页 1.3 s、43 页 0.4 s（每页都画图）。
 - 对 Peck 的影响写进了 v0.4.0 计划：能看图的模型每页附图、去掉一次最多 6 张的上限。还没打 tag，等 v0.4.0 一起发。
 
-## 这轮审核改了什么
+## v0.3.0 审核改了什么
 
 - **OCR 阅读顺序**：原来只认两栏，四栏杂志页（《经济学人》The World This Week）会一行左栏一行右栏地串着读。改成递归切块（`src/ocr/order.rs`）：先找栏缝、把通栏标题和页脚分出去，没有栏缝再按大空白上下切。四栏、两栏加插图、单栏都按阅读顺序排对；加了四栏的单元测试。
 - **仿扫描件工具**：原来是 Swift 脚本 `examples/make_scan.swift`，改成引擎自己的 `samples::scan(&doc, page)`（App 的测试也能用）和 `examples/make_scan.rs`，删掉 Swift 脚本；加了「文字页 → 仿扫描 → OCR 读回」的测试。
@@ -21,6 +32,7 @@ v0.3.0（本机 OCR + Mathpix）完成：Codex 实施 Phase 1–5，Claude 审�
 
 ## 测试
 
+- 这一轮（只改文档）：`./scripts/check.sh` 通过。以下是 v0.3.0 的。
 - `./scripts/check.sh`：通过（默认配置 + `samples,fake`，`cargo test` + `cargo clippy -D warnings`；单元 18、`document` 6、`mathpix` 7、`ocr` 4、`read` 4、文档测试 1，付费测试 1 个默认忽略）。`cargo fmt --check` 通过。
 - `cargo check --target aarch64-unknown-linux-gnu --all-targets`（默认、`samples,fake`）：通过。
 - **站主的真实扫描图**（`local/ocr/`，5 张：《经济学人》两栏、四栏页，繁体中文长文）：全部识别成功；改完后栏序全对；繁体整段几乎无错（一页约 3 处）。系统第一次加载模型 33 s，之后每页 0.4–0.6 s。
@@ -48,7 +60,8 @@ cargo run --release --example probe -- samples/out/mixed.pdf --mathpix 3,5,8 --t
 
 ## 等你
 
-1. **push**：
+1. **看 v0.5–v0.7 的计划**：`ROADMAP.md`（Phase 表）、`docs/design.md` §7、§8（接口草案）。你在提问里定的都写进去了；看过说一声就能开工。
+2. **push**：`main` 有这一轮的新 commit；`v0.3.0` 的 tag 要是还没推，一起推：
 
    ```bash
    git push origin main
@@ -58,9 +71,9 @@ cargo run --release --example probe -- samples/out/mixed.pdf --mathpix 3,5,8 --t
    git push origin v0.3.0
    ```
 
-2. **看 v0.4.0（接 Peck）的计划**：`ROADMAP.md`「v0.4.0 接 Peck」。你在提问里定的都写进去了。
-3. **Peck 1.1.10 做完、提交后**告诉我们一声，v0.4.0 才能开工（两边改的是同一个仓库）。
+3. **Peck 1.1.12 做完、提交后**告诉我们一声，v0.4.0 才能开工。Peck 要是拖得久：可以先把 v0.4.0 里已做的引擎改动（默认每页附图）单独发版，让 v0.5 先开工，Peck 接入时再发现的问题走之后的小版本。要这样做的话说一声。
 
 ## 下一轮
 
-Peck 1.1.10 提交后 → 让 Codex 在 Peck 仓库做 v0.4.0：「读 engine-pdf 的 AGENTS.md、HANDOFF.md、ROADMAP.md『v0.4.0 接 Peck』，再读 Peck 的 CLAUDE.md；照步骤 1–5 做，Peck 的改动守 Peck 的规矩，引擎的改动在 engine-pdf 做；做完两边都写 HANDOFF」。Codex 做完回到 Claude 审核、commit、打 tag。
+1. Peck 1.1.12 提交后 → 让 Codex 在 Peck 仓库做 v0.4.0：「读 engine-pdf 的 AGENTS.md、HANDOFF.md、ROADMAP.md『v0.4.0 接 Peck』，再读 Peck 的 CLAUDE.md；照步骤 1–5 做，Peck 的改动守 Peck 的规矩，引擎的改动在 engine-pdf 做；做完两边都写 HANDOFF」。Codex 做完回到 Claude 审核、commit、打 tag。
+2. v0.4.0 打 tag、站主批了计划之后 → Codex 做 v0.5.0 Phase 1：「读 AGENTS.md、HANDOFF.md、ROADMAP.md『v0.5.0』、design §7、decisions/0009；做 Phase 1（PDFKit 写盘实测、页标签对照、改动单类型、新样本），实测结论写进 design §6，改动单类型列进 HANDOFF 等 Claude 审」。

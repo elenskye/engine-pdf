@@ -2,7 +2,7 @@
 
 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（Rust 库）。App 把 PDF 和要的页码交进来，拿回每页的文字、页图或识别结果；PDF 处理只维护这一份，界面、权限、业务数据、费用确认和记账各 App 自己管。
 
-> 现在是 **v0.3.0**：本机读取、本机 OCR、Mathpix 都能用；下一步接 Peck。进度见 `ROADMAP.md`，交接见 `HANDOFF.md`。
+> 现在是 **v0.3.0**：本机读取、本机 OCR、Mathpix 都能用；下一步接 Peck（v0.4），之后是页面与结构、预览级编辑（v0.5），PDFium 级编辑（v0.6），再接 Pomelo（v0.7）、Pith（v0.8）。进度见 `ROADMAP.md`，交接见 `HANDOFF.md`。
 
 ## 能做什么
 

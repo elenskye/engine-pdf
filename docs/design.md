@@ -1,6 +1,6 @@
 # engine-pdf 设计稿
 
-> 依据 `docs/brief.md`，选型见 `docs/decisions/`。§1–3 已实现（v0.2.0 本机读取，v0.3.0 本机 OCR 和 Mathpix）；§4 是各 App 的接入计划；§6 是实测结论。
+> 依据 `docs/brief.md`、`docs/brief-2.md`、`docs/brief-pomelo.md`，选型见 `docs/decisions/`。§1–3 已实现（v0.2.0 本机读取，v0.3.0 本机 OCR 和 Mathpix）；§4 是各 App 的接入计划；§6 是实测结论；§7（v0.5.0 页面与结构、预览级编辑）、§8（v0.6.0 PDFium 级）是计划。
 
 ## 0. 现状
 
@@ -31,7 +31,12 @@ engine_pdf
 ├── Error             错误种类 + 一句中文
 ├── ocr               Vision 预热和识别类型
 ├── mathpix           （v0.3.0）Quote（本地报价）→ run（上传识别）；分步 submit / wait / fetch / delete
+├── edit              （v0.5.0）改动单 Plan → apply：页面管理、标注、填表、目录、文件信息、密码（§7）
+├── compose           （v0.5.0）照片打包成 PDF、把几份 PDF 拼成带链接和目录的一份（§7.4）
+├── objects / redact  （v0.6.0，feature "pdfium"）移动、删除页上的文字和图片，涂黑（§8）
 └── samples           （feature "samples"）测试样本生成器和手写最小 PDF 的 raw_pdf，App 的测试也能用
+
+web/                  （v0.5.0）无样式的 PDF.js 编辑套件（TS），界面的样子由 App 画（§7.5）
 ```
 
 ### 1.2 打开与错误
@@ -166,7 +171,7 @@ match done {
 | --- | --- |
 | Peck 的 JXA（`osascript`） | 不要：每次起一个进程（几百毫秒），数据走 JSON 和临时文件，调 Vision 很别扭，取消只能杀进程 |
 | Swift 小工具 + 进程间通信 | 不要：每个 App 要多打包、签名一个二进制，三份构建脚本 |
-| 纯 Rust（Pith 的 `pdf-extract`、pdfium） | 不要：中文乱码、扫描件无解；pdfium 要随包带一个大动态库 |
+| 纯 Rust（Pith 的 `pdf-extract`、pdfium） | 不要：中文乱码、扫描件无解；pdfium 要随包带一个大动态库（v0.6.0 起 PDFium 只补 PDFKit 做不到的编辑，§8、`decisions/0010`） |
 | **objc2 进程内直调 PDFKit、Vision** | **用**：Pomelo 正式版已经这样跑；引擎静态链进各 App 的二进制，「从自己的安装包调用」天然成立 |
 
 依赖用 objc2 官方的框架绑定（`objc2-pdf-kit`、`objc2-vision`、`objc2-app-kit`、`objc2-core-graphics`、`objc2-foundation`，都是 0.3.x），绑定缺的方法再退回 Pomelo 那样的 `msg_send!`。所有 `unsafe` 收在 `src/sys/`，对外只露安全的 Rust 类型。
@@ -185,7 +190,7 @@ match done {
 | 页码解析 | Peck `pdf.rs::parse_pages` + 测试 | 原样搬到 `pages::parse` |
 | 测试用的最小 PDF（手写 PDF 语法） | Pomelo `pdf.rs::tests::sample_pdf` | 作 `samples::raw_pdf`，可加 Catalog 条目（`/PageLabels`）和页字典条目（`/Rotate`、`/CropBox`） |
 
-不搬的：Pomelo 的 `images_to_pdf`（只有 Pub2MD 用，留在 Pomelo）、`print.rs`（打印是 Pomelo 自己的流程）、`sha256_hex`（不是 PDF 处理）。
+v0.5.0 再搬：Pomelo 的 `images_to_pdf`、`print.rs::assemble`（§7.4）。不搬的：`print.rs` 的 WebKit 排版（Pomelo 自己的流程）、`sha256_hex`（不是 PDF 处理）。
 
 ### 2.3 Vision：本机 OCR（新写）
 
@@ -261,7 +266,7 @@ App 照旧记进自己的账本：Peck 记成 `Fee::Ocr`，Pith 交给 `meter.re
 4. **下载**：`.mmd` 必取。按提交时设置下载 `.lines.json`、`.mmd.zip`。行数据缺失时按可用结果映射。ZIP 返回 202 时按 `Retry-After` 或轮询间隔重试，等待可取消、有上限。见 [Mathpix PDF 接口文档](https://docs.mathpix.com/reference/post-v3-pdf)。
 5. **删除**：不管成败，只要拿到过 `pdf_id` 就 `DELETE /v3/pdf/{id}`，结果写进 `usage.remote_deleted`。
 
-`/v3/converter`（Pomelo 把 mmd 转 docx 等）不进引擎，留在 Pomelo。
+`/v3/converter`（Pomelo 把 mmd 转 docx 等）v0.7.0 搬进引擎，作 `mathpix::convert`（`decisions/0011`）。
 
 ### 3.4 原页码映射
 
@@ -345,16 +350,19 @@ Pomelo 上传 Word 用 `mathpix::submit_file(bytes, mime, estimated_pages, &keys
 
 页码：引擎的 `index` = PDF.js 的 `pageIndex + 1`，`label` 应等于 PDF.js 的页标签；Pith 存 `index`、显示 `label`，引用就能跳回阅读器的那一页。核对：带罗马数字前言的样本，引擎和 PDF.js 逐页比标签。旧行为核对：拿 Pith 现有的夹具（`research/fixtures.rs` 的 `survey_pdf`、`scanned_pdf`）和样本，比 `pdf-extract` 和引擎的结果——这里**预期会不一样**（换了底层），比的是「没有缺字」「两栏顺序对」，不是逐字相等。替换掉的：`pdf-extract` 依赖（`THIRD_PARTY.md` 删一行）和 Pith 的 Mathpix HTTP 代码。已经存进库的正文不自动重取。
 
-### 4.3 Pomelo
+### 4.3 Pomelo（v0.7.0，Phase 计划见 `ROADMAP.md`）
 
 | 入口 | 现在 | 换成 |
 | --- | --- | --- |
 | `youzi/pdf.rs` 的 `open`、`pages`、`render_pages`、`page_jpeg`、`jpeg_page`、`jpeg_of`、`image_pages` | Pomelo 自己的 objc2 | 引擎（这些就是引擎的原型） |
-| `youzi/files.rs::prepare`、`pictures_only`（知识库导入） | 没文字层的 PDF 只列文件名 | `read(Ocr::auto())`：扫描件在本机就能进知识库（行为变化，届时问站主） |
+| `youzi/files.rs::prepare`、`pictures_only`（知识库导入） | 没文字层的 PDF 只列文件名 | `read(Ocr::auto(), render: None)`：扫描件在本机就能进知识库；默认开，已有的扫描件升级后在后台自动补（站主定） |
 | `youzi/office.rs`（`embedded_images`、`images_text`、`look_at`）、`assistants/importer.rs` | `pdf::pages`、`image_pages`、`page_jpeg` | `Document::image_counts`、`read`、`Document::render` |
 | `pub2md/job.rs` 的原页图（`render_pages`） | 整份画完存文件夹 | `read_each` 逐页画、逐页存（能取消） |
-| `pub2md/mathpix.rs` 的 submit / status / 下载 | Pomelo 自己的客户端 | `mathpix::submit`（`Submitted` 存进任务）/ `wait` / `fetch(mmd_zip)` / `delete`；Word 走 `submit_file` |
-| 留在 Pomelo | — | `sha256_hex`、`images_to_pdf`、`print.rs`、`/v3/converter`、`mmd.rs` 的切块 |
+| `pub2md/mathpix.rs` 的 submit / status / 下载 / converter | Pomelo 自己的 reqwest 客户端 | `mathpix::submit`（`Submitted` 存进任务）/ `wait` / `fetch(mmd_zip)` / `delete`；Word 走 `submit_file`；转 Word、LaTeX 走 `mathpix::convert`；整份删掉 |
+| `pdf::images_to_pdf`（Pub2MD 的照片） | Pomelo 自己的 objc2 | `compose::images` |
+| `print.rs::assemble`、`png_of_pdf`（见字如面导出） | Pomelo 自己的 objc2 | `compose::assemble`；`Document::render(Png)` |
+| `knowledge.rs` 检索命中 PDF 段落 | 只给文字；`view=look` 现画 | 命中就现画那一页给能看图的云端模型（站主定） |
+| 留在 Pomelo | — | `sha256_hex`、`print.rs` 的 WebKit 排版、`mmd.rs` 的切块、Pub2MD 其余 |
 
 核对：文字 PDF 的知识库分段应逐字一致（同是 PDFKit）；原页图比宽高、比像素平均差（阈值用样本定）；Pub2MD 用 `FakeTransport` 跑一遍完整任务，`pdf_id` 存进任务、中途退出再继续不重复上传。
 
@@ -409,4 +417,144 @@ Pomelo 上传 Word 用 `mathpix::submit_file(bytes, mime, estimated_pages, &keys
 
 - 真跑 `mixed` 第 3（空白）、5（中文扫描）、8（公式和表格）页：三页都精确映射回原页码，空白页交回空内容，公式是正确的 LaTeX，表格完整；远端已删；共 $0.015。另有一次单页（第 8 页）真跑，$0.005。
 
-**还要验的**：PDFKit 页标签和 PDF.js 是否一致（接 Pith 时）；真实 App 里的确认框、断网、安装包（接各 App 时）。
+**还要验的**：PDFKit 页标签和 PDF.js 是否一致（v0.5.0 Phase 1，预期没有 `/PageLabels` 时 PDFKit 给「8」、PDF.js 给空）；PDFKit 整份重写对真实论文的影响、macOS 27 上 PDFKit 画高亮时多出评论气泡（Apple 开发者论坛有报告）是否会写进文件（v0.5.0 Phase 1）；真实 App 里的确认框、断网、安装包（接各 App 时）。
+
+---
+
+## 7. 页面与结构、预览级编辑（v0.5.0，计划）
+
+目标是 macOS「预览」的水准：高亮、批注、绘图、文本框、图片签名；合并、插入、删除、旋转、重排；填表、设密码；另加读写目录书签、照片打包、拼 PDF。做法见 `decisions/0009`：一张改动单，引擎用 PDFKit 一处写文件，PDF.js 套件只管在页面上编辑。下面的接口是草案，Phase 1 定稿（公共接口的变化由 Claude 审）。
+
+### 7.1 读
+
+```rust
+doc.info();                     // Info { title, author, subject, keywords, creator, producer, created, modified, encrypted, permissions }
+doc.outline();                  // Vec<OutlineItem { title, target, children }>；target = Page { page, y } | Url | None
+doc.annotations(8)?;            // Vec<Annotation>：已有标注（id、种类、位置、颜色、内容、作者）
+doc.fields();                   // Vec<Field { name, kind, value, options, page, rect, read_only }>
+Document::open_with_password(path, &password)?;   // 密码错报 Error::WrongPassword；密码用 Zeroizing 收，不进日志和错误信息
+```
+
+- **页标签**：v0.5.0 Phase 1 用 PDF.js 6.5（Pith 在用的版本）逐页对照 `labels` 样本和 `~/ResearchLab-test` 的真实论文。预期差异：PDF 没定义 `/PageLabels` 时 PDFKit 给物理页码的数字、PDF.js 给空；引擎改成这时交 `None`（看 Catalog 有没有 `/PageLabels`），和阅读器一致。这是接口行为的变化，写进 CHANGELOG。
+- 目录的 `target.page` 是物理页码（从 1 起），`y` 是 PDF 坐标；指向别的文件、跑脚本的动作不读（PDF 是数据）。
+
+### 7.2 改动单
+
+```rust
+pub struct Plan {
+    pub pages: Option<Vec<Pick>>,          // 新文件的页序；None = 页不变
+    pub add: Vec<Mark>,                    // 新标注，挂在 (source, page) 上：页挪到哪，标注跟到哪
+    pub remove: Vec<MarkId>,               // 删掉已有的标注
+    pub fill: Vec<Fill>,                   // 填表：字段名 → 值
+    pub outline: Option<Vec<OutlineItem>>, // 整棵换掉；页码指新文件的页
+    pub info: Option<InfoPatch>,
+}
+pub struct Pick { pub source: u32, pub page: u32, pub rotate: i32 }   // source 0 = 本文件，1.. = others[source-1]
+pub struct Save { pub lock: Option<Lock>, pub flatten: bool }        // Lock { owner, user, permissions }；flatten 把标注和表单烧进页面
+pub fn apply(doc: &Document, others: &[&Document], plan: &Plan, save: &Save, cancel: &Cancel) -> Result<Vec<u8>, Error>;
+```
+
+- **页面管理都是 `pages`**：合并 = 两个来源的页接起来；插入 = 在中间放进别的来源的页；删除 = 不列；重排 = 换顺序；旋转 = `rotate`（90 的倍数，叠在原旋转上）；抽页 = 只列几页。重复列同一页也行。
+- **标注种类**（PDFKit 都有对应的类型）：
+
+  | 种类 | 存什么 |
+  | --- | --- |
+  | 高亮、下划线、删除线 | 每行一个四边形（quads）、颜色 |
+  | 便签 | 位置、文字（弹出框） |
+  | 文本框 | 框、文字、字号、颜色、边框 |
+  | 绘图 | 若干笔画（点列）、粗细、颜色 |
+  | 形状 | 矩形、椭圆、直线、箭头 |
+  | 图片（签名、印章） | 框、PNG 或 JPEG 字节 |
+  | 链接 | 框、去哪一页的哪个高度，或网址 |
+
+  每个标注可带作者和批注文字。
+- **坐标**一律是 PDF 坐标：pt、原点在页面左下（含 CropBox 偏移），和 OCR 的框、PDF.js 的 `convertToPdfPoint` 相同。从左上量的调用方（Pomelo 的 WebKit 排版）用 `Rect::from_top(page_height, x, y, w, h)` 换。
+- **表单**：文本、勾选、单选、下拉；只写字段的值，不跑表单里的计算脚本（算出来的字段不会自己更新，App 要说）。XFA 表单不支持，读到时报种类明确的错。
+- **密码**：`Lock` 设打开密码（可选）、权限密码和权限（打印、复制、修改、加标注）；不给 `lock` 就存成不加密的（去掉密码要先用密码打开）。加密算法以 PDFKit 实际写出的为准，Phase 1 查清楚写进 §6。
+- **原文件不动**：`apply` 只交回字节。PDFKit 存盘是整份重写：数字签名会失效，个别结构可能丢，Phase 1 实测后写进 §6；App 的确认框里怎么说由 App 定。
+- 错误照 §1.2 的规矩加种类（如 `WrongPassword`、找不到字段、找不到标注、页序越界），`Display` 一句中文。
+
+### 7.3 一次写入的顺序
+
+`apply` 先按 `pages` 建新文件（从各来源复制页、转好），再删标注、加标注、填表、换目录和文件信息，最后按 `Save` 加密或烧平，交回 `dataRepresentation` 的字节。全程在内存里，每页一个 autorelease pool，每页前查 `Cancel`。v0.6.0 加的对象编辑和涂黑在这一步之前，由 PDFium 先改好那几页（§8）。
+
+### 7.4 新建：照片打包、拼 PDF
+
+```rust
+compose::images(&[ImageSource]) -> Result<Vec<u8>, Error>;                    // ImageSource = Path | Bytes
+compose::assemble(parts: &[&[u8]], how: &Assembly) -> Result<Vec<u8>, Error>; // Assembly { links, outline, info }
+```
+
+- `images`：照搬 Pomelo `pdf::images_to_pdf`（NSImage 读 macOS 认的所有格式，含 HEIC，按 EXIF 转正；多页 TIFF 一页一张），连同它的测试。读不了的图报错时说第几张，不带路径。
+- `assemble`：照搬 Pomelo `print.rs::assemble`：把几份 PDF 依次拼成一份，加页内链接（去某页某高度）、网址链接（无边框）、多层目录、标题和生成者。内部就是 `apply`（`pages` 接起各来源，`add` 放链接，`outline`、`info`）。
+- Pith 以后的 PDF 编辑器（整理页面、编辑目录）用同一套 `Plan.pages`、`Plan.outline`。
+
+### 7.5 PDF.js 编辑套件（`web/`）
+
+- TS 包，严格模式；`pdfjs-dist` 6.5.x 由 App 提供（peer 依赖，Pith 现在是 6.5.438）。不带样式、不依赖 React 等框架：交出状态和事件，App 用自己的设计系统画工具栏、缩略图栏、对话框。PDF.js 自己的 `pdf_viewer.css` 由 App 引入。
+- 模块：
+
+  | 模块 | 做什么 |
+  | --- | --- |
+  | `viewer` | 建 PDFViewer（页标签、缩放、查找），开编辑层 |
+  | `tools` | 切换工具、颜色、粗细。PDF.js 6.5 自带的文本框、绘图、图片、签名、批注、高亮直接用；下划线、删除线、形状 PDF.js 没有，套件自己做（文字选区换成 PDF 坐标照 Pith `src/reader/controller.ts` 的办法） |
+  | `capture` | 把编辑器里的内容换成 `Plan.add`、`Plan.remove` |
+  | `organizer` | 缩略图（PDF.js 画）、拖动排序、删除、旋转、从别的文件插入 → `Plan.pages` |
+  | `forms` | PDF.js 表单层的值 → `Plan.fill` |
+  | `outline` | 目录树的增、删、改名、挪位置 → `Plan.outline` |
+
+- **存**：套件只产出改动单（JSON）；App 交给自己的 Rust 调 `edit::apply`，再把新字节交回套件重开。编辑中的撤销用 PDF.js 自己的；存盘后的撤销归 App（留着旧字节）。
+- **签名**：画的、打字的、图片的都换成图片标注；存下来以后再用的签名由 App 保存（钥匙串或 App 数据），套件只要回调。
+- `web/src/plan.ts` 和 Rust 的 `Plan` 一一对应；`tests/fixtures/plan/*.json` 两边的测试都吃，任何一边改了字段另一边的测试就不过。
+- **App 怎么引用**：pnpm 的 git 依赖钉同一个 tag、取 `web` 子目录；不行就照 Atelier 的办法把 `web/dist` 复制进 App（带 `VERSION`、`SHA256SUMS`）。Phase 5 试过再定。
+- PDF.js 编辑器的内部序列化格式会随版本变：套件钉 6.5 这一线，升 PDF.js 要过套件的测试。
+
+### 7.6 试用页
+
+`cargo run --release --example studio -- <PDF>`：只在 `127.0.0.1` 起一个小服务（标准库写，不加依赖），浏览器打开就能试全部工具；「存」把改动单交给引擎，结果写进 `local/studio/`（不进 Git），不碰原文件。试用页只给站主验收和 Codex 自测，样子从简。
+
+---
+
+## 8. PDFium 级（v0.6.0，计划）
+
+### 8.1 分工（`decisions/0010`）
+
+| 能力 | PDFKit | PDFium | 定 |
+| --- | --- | --- | --- |
+| 可搜索扫描件 | 存盘时 `PDFDocumentSaveTextFromOCROption`（macOS 13 起，系统自己识别、写进文字层） | 写不可见文字（render mode invisible），用引擎 OCR 的行、框和阅读顺序 | Phase 1 比 |
+| 移动、删除文字和图片 | 做不到 | 页面对象：列出、变换、删除、重新生成内容流 | PDFium |
+| 涂黑 | 没有真正的涂黑（redact 只是标注） | 删对象、改图片像素、盖黑块 | PDFium |
+
+### 8.2 接入
+
+- Rust 绑定用 `pdfium-render`；feature `pdfium` 默认关，只有要的 App 打开。`check.sh` 加一种开 `pdfium` 的配置。
+- 优先静态链进 App（自己编或用现成的 macOS arm64 静态库），做不到再随 App 带 `libpdfium.dylib`。Phase 1 量 App 二进制多大、编译多久、许可证（PDFium 和它带的 FreeType 等）再定。
+- PDFium 的 `unsafe` 在绑定里；引擎对外只露安全类型，和 PDFKit 一样不跨线程、每页查 `Cancel`。PDFium 文档对象只在 `edit::apply` 里短暂存在，改完交回字节再给 PDFKit。
+
+### 8.3 可搜索扫描件
+
+```rust
+pub fn searchable(doc: &Document, pages: &[u32], opts: &OcrOptions, cancel: &Cancel, progress: &dyn Fn(u32)) -> Result<Vec<u8>, Error>;
+```
+
+- 只给没有文字层（或乱码）的页加字，别的页、标注、链接、目录不动；断网可做。
+- 加的字和页上的字对齐：预览、PDF.js 里选中、搜索高亮落在对的位置。
+- 标记哪些页的文字是识别加上的；引擎再读时能分出这些页（`Content` 怎么交 Phase 2 定），App 照样能告诉模型「这是识别的字，可能有错字」。
+- 生成的文件比原件大多少、Phase 1 的结论写进 §6。
+
+### 8.4 移动与删除文字、图片
+
+```rust
+doc.objects(8)?;   // Vec<Object { id, kind: Text | Image | Path | Other, bounds, text }>（feature "pdfium"）
+```
+
+- 改动单加 `objects: Vec<ObjectOp>`：`Move { page, id, dx, dy }`、`Delete { page, id }`；`id` 只在同一次打开里有效。
+- 套件加「选对象」工具：点选、框选、拖动预览、删除；结果进改动单。
+- 改完再取字、画页图：移动的字在新位置能取到，删掉的取不到，别的页逐字不变。
+
+### 8.5 涂黑
+
+- 改动单加 `redact: Vec<Redaction { page, rects }>`。框里的字、图片像素、标注都去掉，再盖黑块。
+- 字对象只有一部分在框里时，这一页退回「整页画成图 → 涂黑 → 本机 OCR 把框外的字加回成不可见文字」，那一页仍能搜框外的字。
+- **硬条件**（`decisions/0010`）：涂完用引擎再取字，框里一个字都取不到；页图里框内全黑；图片资源里也没有原像素。达不到就报错、不交文件。
+- 基础涂黑不管文件信息、书签、附件里的同一段字；App 的确认框要说清楚。套件的涂黑工具是先标、再确认执行。

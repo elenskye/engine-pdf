@@ -1,6 +1,6 @@
 # CLAUDE.md — engine-pdf 开发约定
 
-engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库）：打开、取字、渲染页图、本机 Vision OCR、Mathpix 识别。界面、文件权限、业务数据、费用确认和记账都归 App。`AGENTS.md` 是本文件的软链接，Codex 读到的就是这一份（里面的「你」也指 Codex）。
+engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库，v0.5.0 起另带无样式的 PDF.js 编辑套件 `web/`）：打开、取字、渲染页图、本机 Vision OCR、Mathpix 识别；v0.5.0 起页面与结构、标注、表单、密码，v0.6.0 起 PDFium 级编辑（`ROADMAP.md`）。界面的样子、文件权限、业务数据、费用确认和记账都归 App；PDF.js 上的编辑逻辑归引擎（`decisions/0009`）。`AGENTS.md` 是本文件的软链接，Codex 读到的就是这一份（里面的「你」也指 Codex）。
 
 ## 开工前
 
@@ -40,7 +40,8 @@ engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库�
 ## 边界
 
 - **绝不读写** `~/Zotero/`、`~/Pith/`、各 App 的正式数据目录。测试只用代码生成的样本、可提交的公开样本（来源和许可证写进 `samples/README.md`），或站主给的副本（放 `local/`，不进 Git）。
-- PDF 是数据：只读文字和画面，不执行里面的脚本、表单动作、外链，不跟随附件。
+- PDF 是数据：只读文字和画面，不执行里面的脚本、表单动作、外链，不跟随附件。填表只写字段的值，不跑表单里的计算脚本。
+- PDF 的密码和 Mathpix 密钥一样：由 App 交进来，用 `Zeroizing` 收，不打印、不写进日志、错误信息和夹具。
 - 真跑 Mathpix（花钱）只在每个版本的验收里、只用样本：每版上限默认 **$1**（每页 $0.005），超了先问。密钥照 `HANDOFF.md`「真跑」：在会话临时目录建 600 权限的密钥文件、用环境变量交给测试，不打印、不写进文档、夹具、日志和错误信息。
 - 不部署、不发布到 crates.io、不购买服务、不改系统全局设置。
 - 资源约束：MacBook M3 Pro / 18 GB。引擎不起常驻进程、不开线程池；OCR 一次一页。
@@ -48,6 +49,8 @@ engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库�
 ## 工程约定
 
 - Mac 专用：PDFKit、Vision、AppKit 经 `objc2` 在进程里调（`decisions/0003`）。非 macOS 也要能编译，调用返回 `Error::Unsupported`。
+- 写文件只有 `edit::apply` 一处（PDFKit）；PDFium 只做 PDFKit 做不到的（移动删除对象、涂黑），在 feature `pdfium` 后面，默认关（`decisions/0010`）。
+- `web/`：TS 严格模式，`pdfjs-dist` 是 peer 依赖（钉 6.5 这一线）；`web/src/plan.ts` 和 Rust 的 `edit::Plan` 一一对应，两边的测试吃同一套 `tests/fixtures/plan/`。
 - 全部接口是**同步**的；异步的 App 用 `spawn_blocking` 包。`Document` 不跨线程（`!Send`）。长任务都收 `Cancel`，逐页检查。
 - 页码一律是**原文件的物理页码，从 1 起**；页标签（印在页上的页码）另给。
 - 错误是 `Error` 枚举：App 能按种类分辨；`Display` 是一句简短中文，不带密钥、路径和服务原文。
@@ -69,7 +72,7 @@ engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库�
 | `CHANGELOG.md` | 每个发出去的版本：公共接口变化、App 升级要改什么 |
 | `docs/design.md` | 架构设计稿（接口、原生实现、云端交界、迁移、验收） |
 | `docs/decisions/` | 选型决定，一事一文 |
-| `docs/brief.md` | 站主的第一轮简报（原件，不改） |
+| `docs/brief.md`、`docs/brief-2.md`、`docs/brief-pomelo.md` | 站主的简报原件（第一轮、第二轮新计划、Pomelo 接入），不改 |
 | `THIRD_PARTY.md` | 第三方依赖 |
 
 ## 汇报
