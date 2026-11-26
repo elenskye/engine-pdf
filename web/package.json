@@ -1,6 +1,6 @@
 {
   "name": "@elenskye/engine-pdf-web",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "PDF.js 编辑状态与 Engine PDF 改动单",
   "private": true,
   "type": "module",

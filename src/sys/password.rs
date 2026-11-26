@@ -2,12 +2,8 @@ use lopdf::{
     EncryptionState, EncryptionVersion, Object, Permissions as PdfPermissions, StringFormat,
 };
 use objc2::rc::autoreleasepool;
-use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2_foundation::{NSDictionary, NSMutableDictionary, NSNumber, NSString, NSUUID, ns_string};
-use objc2_pdf_kit::{
-    PDFAccessPermissions, PDFDocumentAccessPermissionsOption, PDFDocumentOwnerPasswordOption,
-    PDFDocumentUserPasswordOption,
-};
+use objc2_foundation::{NSDictionary, NSString, NSUUID, ns_string};
+use objc2_pdf_kit::PDFDocumentUserPasswordOption;
 
 use crate::{
     Cancel, Error,
@@ -54,6 +50,10 @@ pub(super) fn declared_permissions(pdf: &Pdf) -> Option<Permissions> {
     })
 }
 
+/// 用 lopdf 按标准安全处理器加密（128 位 RC4，R3），再用 PDFKit 打开核对密码和权限位。
+///
+/// 不用 PDFKit 自己加密：它写出的加密文件在 Edge 等 PDFium 系阅读器里不显示表单控件（v0.5.2 验收发现），
+/// 有的权限组合它还会多给批注权限。
 pub(super) fn encrypt(bytes: &[u8], lock: &Lock, cancel: &Cancel) -> Result<Vec<u8>, Error> {
     cancel.check()?;
     let user = lock.user.as_ref().filter(|password| !password.is_empty());
@@ -62,59 +62,9 @@ pub(super) fn encrypt(bytes: &[u8], lock: &Lock, cancel: &Cancel) -> Result<Vec<
     {
         return Err(Error::InvalidPasswordOptions);
     }
-
-    let doc = Pdf::from_bytes(bytes)?;
-    let mut access = PDFAccessPermissions::AllowsContentAccessibility.0;
-    if lock.permissions.print {
-        access |= PDFAccessPermissions::AllowsLowQualityPrinting.0
-            | PDFAccessPermissions::AllowsHighQualityPrinting.0;
-    }
-    if lock.permissions.copy {
-        access |= PDFAccessPermissions::AllowsContentCopying.0;
-    }
-    if lock.permissions.modify {
-        access |= PDFAccessPermissions::AllowsDocumentChanges.0
-            | PDFAccessPermissions::AllowsDocumentAssembly.0
-            | PDFAccessPermissions::AllowsFormFieldEntry.0;
-    }
-    if lock.permissions.annotate {
-        access |= PDFAccessPermissions::AllowsCommenting.0;
-    }
-    let encrypted = autoreleasepool(|_| {
-        let owner = NSString::from_str(&lock.owner);
-        let flags = NSNumber::numberWithUnsignedInteger(access);
-        let options = NSMutableDictionary::<NSString, AnyObject>::new();
-        // SAFETY: 密码和权限键接受 NSString / NSNumber。选项和 PDF 在当前线程使用。
-        unsafe {
-            options.setObject_forKey(
-                &owner,
-                ProtocolObject::from_ref(PDFDocumentOwnerPasswordOption),
-            );
-            options.setObject_forKey(
-                &flags,
-                ProtocolObject::from_ref(PDFDocumentAccessPermissionsOption),
-            );
-            if let Some(password) = user {
-                let user = NSString::from_str(password);
-                options.setObject_forKey(
-                    &user,
-                    ProtocolObject::from_ref(PDFDocumentUserPasswordOption),
-                );
-            }
-            let options: &NSDictionary<NSString, AnyObject> = &options;
-            doc.native()
-                .dataRepresentationWithOptions(options.cast_unchecked())
-        }
-        .ok_or(Error::SaveFailed)
-    })?;
-    cancel.check()?;
-    let encrypted = encrypted.to_vec();
-    if verify(&encrypted, lock, doc.page_count())? == lock.permissions {
-        return Ok(encrypted);
-    }
-    // PDFKit 会在只允许修改时附带批注权限。需要时用相同的加密规范写精确位值。
-    let encrypted = encrypt_exact(bytes, lock, cancel)?;
-    if verify(&encrypted, lock, doc.page_count())? != lock.permissions {
+    let page_count = Pdf::from_bytes(bytes)?.page_count();
+    let encrypted = write_encrypted(bytes, lock, cancel)?;
+    if verify(&encrypted, lock, page_count)? != lock.permissions {
         return Err(Error::SaveFailed);
     }
     cancel.check()?;
@@ -142,7 +92,7 @@ fn verify(bytes: &[u8], lock: &Lock, page_count: u32) -> Result<Permissions, Err
     declared_permissions(&reader).ok_or(Error::SaveFailed)
 }
 
-fn encrypt_exact(bytes: &[u8], lock: &Lock, cancel: &Cancel) -> Result<Vec<u8>, Error> {
+fn write_encrypted(bytes: &[u8], lock: &Lock, cancel: &Cancel) -> Result<Vec<u8>, Error> {
     let mut pdf = super::objects::load_plain(bytes)?;
     if pdf
         .trailer

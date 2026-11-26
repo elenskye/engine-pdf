@@ -2,7 +2,7 @@
 
 Peck、Pith、Pomelo 共用的 Mac PDF 引擎。Rust 库负责读取、识别和保存编辑结果，`web/` 提供无样式的 PDF.js 编辑套件。界面、文件权限、业务数据、费用确认和记账由各 App 管理。
 
-> 当前 **v0.5.1**（页面与结构、预览级编辑）。本地放在引擎总仓库 `personal-engine-studio/` 下，是独立的 git 仓库。进度见 `ROADMAP.md`，交接见 `HANDOFF.md`。
+> 当前 **v0.5.2**（页面与结构、预览级编辑）。本地放在引擎总仓库 `personal-engine-studio/` 下，是独立的 git 仓库。进度见 `ROADMAP.md`，交接见 `HANDOFF.md`。
 
 ## 能做什么
 
@@ -23,7 +23,7 @@ Peck、Pith、Pomelo 共用的 Mac PDF 引擎。Rust 库负责读取、识别和
 
 ```toml
 [dependencies]
-engine-pdf = { git = "https://github.com/elenskye/engine-pdf", tag = "v0.5.1" }
+engine-pdf = { git = "https://github.com/elenskye/engine-pdf", tag = "v0.5.2" }
 ```
 
 升级改 tag，回退改回上一个 tag。每版接口变化见 `CHANGELOG.md`。
