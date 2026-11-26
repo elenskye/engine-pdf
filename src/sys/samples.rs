@@ -12,7 +12,7 @@ use objc2_core_graphics::{
 use objc2_core_text::{CTFont, CTLine, kCTFontAttributeName};
 
 use super::pdf::Pdf;
-use crate::samples::{LABEL_TEXT, LOCKED_PASSWORD, Page, Sample, raw_pdf};
+use crate::samples::{LABEL_TEXT, LOCKED_PASSWORD, Page, Sample, raw_pdf, raw_pdf_with_objects};
 use crate::{Error, ImageFormat};
 
 const WIDTH: usize = 612;
@@ -28,6 +28,9 @@ pub(crate) fn generate(sample: Sample) -> Result<Vec<u8>, Error> {
             Ok(pdf)
         }
         Sample::Labels => Ok(labels_pdf()),
+        Sample::Outline | Sample::Form | Sample::Annotated | Sample::Links => {
+            Ok(structure_pdf(sample))
+        }
         _ => {
             let pdf = draw_pdf(sample)?;
             if sample == Sample::Locked {
@@ -221,6 +224,102 @@ fn labels_pdf() -> Vec<u8> {
     )
 }
 
+fn structure_pdf(sample: Sample) -> Vec<u8> {
+    let [note, text_box, arrow, stamp] = [
+        (23, 23, "1 0.75 0 rg 1 2 m 1 22 l 22 22 l 22 7 l 7 7 l h f 0 g 5 16 13 1 re f 5 12 10 1 re f\n"),
+        (180, 31, "0.9 0.95 1 rg 0 0 180 31 re f 0 g BT /F1 14 Tf 8 10 Td (A text box) Tj ET\n"),
+        (81, 48, "0 0.5 0 RG 2 w 5 5 m 74 41 l S 62 40 m 74 41 l 66 32 l S\n"),
+        // 2×2 RGB 图片，四个像素按 ASCIIHex 编码。
+        (48, 36, "q 48 0 0 36 0 0 cm BI /W 2 /H 2 /BPC 8 /CS /RGB /F /AHx ID e43b3be8b9282975c443a047> EI Q\n"),
+    ]
+    .map(|(width, height, contents)| {
+        format!(
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 {width} {height}] /Resources << /Font << /F1 3 0 R >> >> /Length {} >>\nstream\n{contents}endstream",
+            contents.len(),
+        )
+    });
+    let (catalog, page_entries, extra_objects): (&str, &[&str], &[&str]) = match sample {
+        // 三页的页对象依次是 4、6、8，额外对象从 10 起。
+        Sample::Outline => (
+            "/Outlines 10 0 R",
+            &["", "", ""],
+            &[
+                "<< /Type /Outlines /First 11 0 R /Last 14 0 R /Count 4 >>",
+                "<< /Title (Introduction) /Parent 10 0 R /Next 13 0 R /First 12 0 R /Last 12 0 R /Count 1 /Dest [4 0 R /XYZ 0 320 null] >>",
+                "<< /Title (Details) /Parent 11 0 R /Dest [6 0 R /XYZ 0 310 null] >>",
+                "<< /Title (Appendix) /Parent 10 0 R /Prev 11 0 R /Next 14 0 R /Dest [8 0 R /XYZ 0 300 null] >>",
+                "<< /Title (Reference) /Parent 10 0 R /Prev 13 0 R /A << /S /URI /URI (https://example.com/reference) >> >>",
+            ],
+        ),
+        Sample::Form => (
+            "/AcroForm << /Fields [6 0 R 7 0 R 8 0 R 11 0 R] /NeedAppearances true /DR << /Font << /Helv 3 0 R >> >> /DA (/Helv 12 Tf 0 g) >>",
+            &["/Annots [6 0 R 7 0 R 9 0 R 10 0 R 11 0 R]"],
+            &[
+                "<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /V (Before) /Rect [30 270 210 294] /F 4 /P 4 0 R >>",
+                "<< /Type /Annot /Subtype /Widget /FT /Btn /T (agree) /V /Off /AS /Off /Rect [30 220 50 240] /F 4 /P 4 0 R /AP << /N << /Off 12 0 R /Yes 13 0 R >> >> >>",
+                "<< /FT /Btn /Ff 32768 /T (choice) /V /One /Kids [9 0 R 10 0 R] >>",
+                "<< /Type /Annot /Subtype /Widget /Parent 8 0 R /AS /One /Rect [30 170 50 190] /F 4 /P 4 0 R /AP << /N << /Off 12 0 R /One 13 0 R >> >> >>",
+                "<< /Type /Annot /Subtype /Widget /Parent 8 0 R /AS /Off /Rect [65 170 85 190] /F 4 /P 4 0 R /AP << /N << /Off 12 0 R /Two 13 0 R >> >> >>",
+                "<< /Type /Annot /Subtype /Widget /FT /Ch /Ff 131072 /T (selection) /Opt [(Alpha) (Beta)] /V (Alpha) /Rect [30 120 140 144] /F 4 /P 4 0 R >>",
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length 15 >>\nstream\n0 0 20 20 re S\nendstream",
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length 15 >>\nstream\n2 2 16 16 re f\nendstream",
+            ],
+        ),
+        Sample::Annotated => (
+            "",
+            &[
+                "/Annots [6 0 R 7 0 R 8 0 R 9 0 R 10 0 R 11 0 R 12 0 R 13 0 R 14 0 R 15 0 R 16 0 R 17 0 R]",
+            ],
+            &[
+                "<< /Type /Annot /Subtype /Highlight /Rect [29 326 74 344] /QuadPoints [29 344 74 344 29 326 74 326] /C [1 1 0] /F 4 >>",
+                "<< /Type /Annot /Subtype /Underline /Rect [77 326 132 344] /QuadPoints [77 344 132 344 77 326 132 326] /C [0 0.5 0] /F 4 >>",
+                "<< /Type /Annot /Subtype /StrikeOut /Rect [135 326 185 344] /QuadPoints [135 344 185 344 135 326 185 326] /C [1 0 0] /F 4 >>",
+                "<< /Type /Annot /Subtype /Text /Rect [30 255 53 278] /Contents (A note) /T (Sample author) /C [1 0.75 0] /AP << /N 18 0 R >> /F 4 >>",
+                "<< /Type /Annot /Subtype /FreeText /Rect [90 247 270 278] /Contents (A text box) /DA (/F1 14 Tf 0 g) /C [0.9 0.95 1] /AP << /N 19 0 R >> /F 4 >>",
+                "<< /Type /Annot /Subtype /Ink /Rect [28 171 110 226] /InkList [[30 180 50 220 70 175 105 210]] /C [0.4 0.1 0.7] /BS << /W 3 >> /F 4 >>",
+                "<< /Type /Annot /Subtype /Square /Rect [128 176 184 222] /C [0.8 0.2 0.1] /BS << /W 2 >> /F 4 >>",
+                "<< /Type /Annot /Subtype /Circle /Rect [208 176 264 222] /C [0.1 0.5 0.8] /BS << /W 2 >> /F 4 >>",
+                "<< /Type /Annot /Subtype /Line /Rect [28 105 109 149] /L [31 108 106 146] /C [0 0.5 0] /BS << /W 2 >> /F 4 >>",
+                "<< /Type /Annot /Subtype /Line /Rect [125 103 206 151] /L [130 108 199 144] /LE [/None /OpenArrow] /C [0 0.5 0] /BS << /W 2 >> /AP << /N 20 0 R >> /F 4 >>",
+                "<< /Type /Annot /Subtype /Stamp /Rect [231 108 279 144] /AP << /N 21 0 R >> /F 4 >>",
+                "<< /Type /Annot /Subtype /Link /Rect [30 54 111 77] /A << /S /URI /URI (https://example.com/annotation) >> /Border [0 0 1] >>",
+                &note,
+                &text_box,
+                &arrow,
+                &stamp,
+            ],
+        ),
+        Sample::Links => (
+            "",
+            &["/Annots [8 0 R 9 0 R]", ""],
+            &[
+                "<< /Type /Annot /Subtype /Link /Rect [30 300 150 320] /Dest [6 0 R /XYZ 0 310 null] /Border [0 0 0] >>",
+                "<< /Type /Annot /Subtype /Link /Rect [30 270 150 290] /A << /S /URI /URI (https://example.com/link) >> /Border [0 0 0] >>",
+            ],
+        ),
+        _ => unreachable!(),
+    };
+    let entries: Vec<_> = page_entries
+        .iter()
+        .map(|extra| format!("/MediaBox [0 0 400 400] {extra}"))
+        .collect();
+    let streams: Vec<_> = (1..=page_entries.len())
+        .map(|page| {
+            let text = sample.source_text(page as u32).unwrap();
+            text.lines()
+                .zip([(30, 330), (225, 276), (225, 225), (225, 175), (225, 125)])
+                .map(|(line, (x, y))| format!("BT /F1 12 Tf {x} {y} Td ({line}) Tj ET\n"))
+                .collect::<String>()
+        })
+        .collect();
+    let pages: Vec<_> = entries
+        .iter()
+        .zip(&streams)
+        .map(|(entry, stream)| (entry.as_str(), stream.as_str()))
+        .collect();
+    raw_pdf_with_objects(catalog, &pages, extra_objects)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,6 +336,10 @@ mod tests {
             (Mixed, 10, &[1, 4, 7, 10]),
             (ScannedTwoColumn, 1, &[]),
             (Labels, 6, &[1, 2, 3, 4, 5, 6]),
+            (Outline, 3, &[1, 2, 3]),
+            (Form, 1, &[1]),
+            (Annotated, 1, &[1]),
+            (Links, 2, &[1, 2]),
         ] {
             let pdf = Pdf::from_bytes(&sample.generate().unwrap()).unwrap();
             assert_eq!(pdf.page_count(), count, "{sample:?}");

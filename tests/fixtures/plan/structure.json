@@ -1,0 +1,28 @@
+{
+  "pages": [
+    { "source": 0, "page": 2, "rotate": 90 },
+    { "source": 1, "page": 1, "rotate": 0 },
+    { "source": 0, "page": 2, "rotate": 0 }
+  ],
+  "add": [
+    {
+      "source": 0, "page": 2, "kind": "link",
+      "rect": { "x": 20.0, "y": 300.0, "width": 90.0, "height": 14.0 },
+      "target": { "kind": "page", "page": 2, "y": 310.0 }
+    },
+    {
+      "source": 1, "page": 1, "kind": "link",
+      "rect": { "x": 20.0, "y": 280.0, "width": 90.0, "height": 14.0 },
+      "target": { "kind": "url", "url": "https://example.com/reference" }
+    }
+  ],
+  "outline": [
+    {
+      "title": "Part I", "target": { "kind": "none" },
+      "children": [
+        { "title": "Chapter 1", "target": { "kind": "page", "page": 3, "y": 330.0 } }
+      ]
+    }
+  ],
+  "info": { "title": "Edition one", "creator": "engine-pdf", "keywords": ["draft", "pdf"] }
+}

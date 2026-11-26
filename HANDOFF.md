@@ -1,80 +1,52 @@
 # HANDOFF
 
-更新：2026-11-25 · v0.4.0 已发版（tag `v0.4.0`，只含默认每页附图）· Claude Code 拟定 v0.5–v0.8 计划
+更新于 2026-11-26。v0.5.0 已完成、Claude 审核过，已提交未打 tag。最近已发布的引擎是 `v0.4.0`。
 
-## 现在在哪
+## 本轮（Claude 审核 Codex 的 Phase 1–6）
 
-v0.3.0（本机 OCR + Mathpix）完成。v0.4.0 接 Peck 的计划已批，等 Peck 1.1.12（另一个会话在做，Peck 工作区有没提交的改动）提交后开工。
+- **写入改成 lopdf 在原文件的对象上写**（`decisions/0017`）。新增 `src/sys/write.rs`（页面搬运、标注增删、链接、目录、页标签、结构树、文件信息）和 `src/sys/objects.rs`（lopdf 读写、交叉引用表修复、补回没有 `/Length` 的流、跨文件搬对象、CoreGraphics 画的 Form XObject）。删掉 `live_form.rs`、`page_content.rs` 和逐页核对文字层的流程。`forms.rs`、`flatten.rs`、`password.rs` 改用 `objects.rs`。
+- **修的问题**（38 份真实论文实测发现）：
+  - 知网论文任何编辑都报 `SaveFailed`。
+  - 带结构树的期刊论文加不上标注、调不了页（`EditTextChanged`）。
+  - 原本就找不到目标的链接，任何保存都被删掉。
+  - 编辑后页标签丢失。
+  - `/Fields` 为空的 `/AcroForm` 挡住调页。
+  - 「预览」里中文文本框乱码。
+  - 文本框文字被截断：现在不自动换行，放不下就整体缩小。
+- 页序不变、只有旋转时也在原文件上改，表单、结构树都保留。
+- 小处：`compose::images` 改走 `sys::images`；`Save` 字段补注释；试用页没填权限密码时直接提示；`samples::raw_pdf_with_objects` 公开给测试用。
+- 新测试：知网式交叉引用表、无 `/Length` 的流、调页后页标签、具名链接、结构树、空表单字典，原地编辑不动其余对象，中文文本框的嵌入字体。
+- 文档：`decisions/0017`（新），`0009`、`0012`（标为被取代）、`0013`、`0014`，design §6、§7，`CLAUDE.md` 工程约定一条，README、ROADMAP、CHANGELOG。
 
-**这轮（只拟计划，没写代码）**：照站主的第二轮简报（`docs/brief-2.md`）和 Pomelo 接入简报（`docs/brief-pomelo.md`），用两轮提问定了方向，把 v0.5–v0.8 的计划写进 `ROADMAP.md`、design §7–§8：
+## 验证
 
-- 顺序（`decisions/0008`）：v0.5 页面与结构 + 预览级编辑 → v0.6 PDFium 级 → v0.7 接 Pomelo（Pomelo 1.1.0）→ v0.8 接 Pith → v1.0。
-- 编辑（`decisions/0009`）：一张改动单 `edit::Plan`，只有引擎（PDFKit）写文件；`web/` 是无样式的 PDF.js 6.5 编辑套件，样子由 App 画；v0.5 用试用页 `examples/studio` 验收，Pith 到 v0.8 再接。
-- PDFium（`decisions/0010`）：先实验；只做移动删除对象、涂黑；可搜索扫描件比过「引擎 OCR + 不可见文字层」和 PDFKit 自带的 `SaveTextFromOCR` 再定；feature `pdfium` 默认关，尽量静态链。
-- Mathpix 转换搬进引擎（`decisions/0011`）。
-- Pomelo（站主定）：扫描件默认识别、已有的也自动补；检索命中就带页图。
-- 查到的：PDF.js 6.5 已有签名、批注编辑器和页面整理（`PagesMapper`、`extractPages`），没有下划线、删除线、形状，要套件自己做；PDFKit 没有真正的涂黑。
-
-改的文件：`ROADMAP.md`（版本表、v0.5–v0.7 Phase 表、v0.8 大纲、验收清单）、`docs/design.md`（§1.1、§2、§3.3、§4.3、§6 小改，新增 §7、§8）、`docs/decisions/0008`–`0011`（新）、`docs/brief-2.md`、`docs/brief-pomelo.md`（简报原件）、`CLAUDE.md`（边界、工程约定、文档表）、`README.md`（一行）、本文件。
-
-## v0.4.0 已先做的引擎改动（2026-11-25，站主定）
-
-- **默认每页都给页图**（`decisions/0007`）：`ReadOptions::default()` 现在每页附 1568px JPEG（空白页、读失败的页除外），有文字层的页也给，看不看由模型决定；去掉 `Render::only_no_text()`。改了 `src/read.rs`、`tests/read.rs`（加「默认每页附图、空白页不附」的测试；300 页取消测试显式关图），文档同步（design §1.3、§1.6，README、CHANGELOG、ROADMAP v0.4.0 步骤 2–3）。
-- 测试：`./scripts/check.sh` 通过，Linux 编译检查通过。真实论文 35 页 1.3 s、43 页 0.4 s（每页都画图）。
-- 对 Peck 的影响写进了 v0.4.0 计划：能看图的模型每页附图、去掉一次最多 6 张的上限。还没打 tag，等 v0.4.0 一起发。
-
-## v0.3.0 审核改了什么
-
-- **OCR 阅读顺序**：原来只认两栏，四栏杂志页（《经济学人》The World This Week）会一行左栏一行右栏地串着读。改成递归切块（`src/ocr/order.rs`）：先找栏缝、把通栏标题和页脚分出去，没有栏缝再按大空白上下切。四栏、两栏加插图、单栏都按阅读顺序排对；加了四栏的单元测试。
-- **仿扫描件工具**：原来是 Swift 脚本 `examples/make_scan.swift`，改成引擎自己的 `samples::scan(&doc, page)`（App 的测试也能用）和 `examples/make_scan.rs`，删掉 Swift 脚本；加了「文字页 → 仿扫描 → OCR 读回」的测试。
-- **Mathpix**：流程（提交、等待、下载、删除）从 `src/mathpix.rs` 拆到 `src/mathpix/job.rs`，`mathpix.rs` 只留类型；响应加 1 GB 上限，超了报「文件太大」（`TransportError::TooLarge`）；`probe --mathpix` 带上 `lines.json` 并打印每页映射到的原页码。
-- **文档**：design §2.3、§2.5、§5.1、§6（实测结论）更新精简；CHANGELOG、ROADMAP、README 定稿。
-
-## 测试
-
-- 这一轮（只改文档）：`./scripts/check.sh` 通过。以下是 v0.3.0 的。
-- `./scripts/check.sh`：通过（默认配置 + `samples,fake`，`cargo test` + `cargo clippy -D warnings`；单元 18、`document` 6、`mathpix` 7、`ocr` 4、`read` 4、文档测试 1，付费测试 1 个默认忽略）。`cargo fmt --check` 通过。
-- `cargo check --target aarch64-unknown-linux-gnu --all-targets`（默认、`samples,fake`）：通过。
-- **站主的真实扫描图**（`local/ocr/`，5 张：《经济学人》两栏、四栏页，繁体中文长文）：全部识别成功；改完后栏序全对；繁体整段几乎无错（一页约 3 处）。系统第一次加载模型 33 s，之后每页 0.4–0.6 s。
-- **仿扫描件字错率**（整页比，含页眉、脚注、全半角）：英文约 3%，简体中文 9–11%。Vision 常漏「的」，换分辨率和设置都一样（design §6）。简体页不会被认成繁体。
-- **禁网**：`sandbox-exec` 禁掉网络后（确认连不上 api.mathpix.com），`mixed` 10 页照常分类和识别，真实扫描页照常识别。
-- **Mathpix 真跑**：Codex 跑第 8 页（$0.005）；Claude 跑第 3、5、8 页（空白、中文扫描、公式表格，$0.015）——三页都精确映射回原页码，公式是正确的 LaTeX，表格完整，远端已删。本版共花 $0.02（上限 $1）。
+- `./scripts/check.sh` 通过：两种配置的 `cargo test`、`clippy -D warnings`，Web 类型检查和测试。付费的 Mathpix 1 项保持忽略。`cargo check --target aarch64-unknown-linux-gnu --all-targets --features samples,fake` 通过。
+- 真实论文验收：38 份（`~/ResearchLab-test` 28 份 + `local/pdf` 10 份）逐份跑整份倒序、转一页、调页加删页、13 种标注加删、读回重建、密码、合并，1,778 项通过。没过的 6 项是「有/无结构树的论文合并」，属已知行为（design §6）。验收程序在会话临时目录，没进仓库。
+- 浏览器（试用页 + PDF.js 6.5.438）：
+  - 知网论文：画矩形、椭圆、直线、箭头、链接、下划线、便签、中文文本框，转一页、删一页，存出 11 页。转的页尺寸对、每页文字不变、8 个标注读回。
+  - 带结构树的英文论文：高亮、绘图、文本框，21 页文字不变，原有 12 个链接保留。
+  - `form.pdf`：四类控件填值并设打开密码，存出后不给密码打不开，给了能开，四个值都对。
+- 「预览」原生窗口没开（以前受 ScreenCaptureKit `-3811` 阻塞）。外观用引擎（PDFKit）画页图核对过：中文文本框、全套标注。
 
 ## 已知问题
 
-- Vision 中文会漏「的」等字，逐字要求高的页用 Mathpix。
-- 引擎关掉了 `log` 的 TRACE（`decisions/0006`），接进 App 后整个 App 都没有 TRACE 日志（DEBUG 及以上照常）。
-- 系统第一次加载 OCR 模型要 16–33 s，App 要么启动时后台调 `ocr::warm_up()`，要么第一次识别时显示进度。
+- 用压缩对象流的文件，保存后最多变成原来的 1.6 倍大。lopdf 的对象流写法也只能降到约 1.5 倍，值得时再做。
+- 有/无结构树的文件合并时整份不带结构树，带结构树那份按版面取字。
+- `Mark::Image` 的字节在 JSON 里是数字数组，签名图大时请求体偏大，可改成 base64（改合同，等接 App 时一起定）。
 
-## 真跑
+## 等站主
 
-密钥沿用 Pith 真跑那份（站主同意，每版上限 $1）：在会话临时目录建 600 权限的文件，用 `MATHPIX_APP_ID` / `MATHPIX_APP_KEY` 交给程序，不打印。只对生成样本跑：
+- 按 `ROADMAP.md`「用户验收清单」的 v0.5.0 三条，在试用页和「预览」里各用一遍（运行步骤见 README「本地试用页」）。看过没问题就让 Claude 打 tag `v0.5.0`（push 由你做）。
+
+## 下一轮
+
+- 站主验收后打 tag `v0.5.0`。
+- 之后照 ROADMAP：Peck 接入（等 Peck 1.1.12），或 v0.6.0 PDFium 级（计划已写，等批）。
+
+## Mathpix 真跑
+
+发版验收用 Pith 同一份凭据，写入会话临时目录的 `600` 权限文件，通过 `MATHPIX_APP_ID` / `MATHPIX_APP_KEY` 传入。只对样本真跑，每版上限 $1。v0.5.0 没动 Mathpix，没有真跑。
 
 ```bash
 cargo test --features samples --test mathpix_live live_mathpix_mixed_page_8 -- --ignored --exact --nocapture
 ```
-
-```bash
-cargo run --release --example probe -- samples/out/mixed.pdf --mathpix 3,5,8 --text
-```
-
-## 等你
-
-1. **v0.4.0 已先发版**（站主定）：v0.5.0 可以开工。
-1. **看 v0.5–v0.7 的计划**：`ROADMAP.md`（Phase 表）、`docs/design.md` §7、§8（接口草案）。你在提问里定的都写进去了；看过说一声就能开工。
-2. **push**：`main` 有这一轮的新 commit；`v0.3.0` 的 tag 要是还没推，一起推：
-
-   ```bash
-   git push origin main
-   ```
-
-   ```bash
-   git push origin v0.4.0
-   ```
-
-3. **Peck 1.1.12 做完、提交后**告诉我们一声，v0.4.0 才能开工。Peck 接入钉当时最新的 tag，接入中发现的引擎问题跟着当期版本发。
-
-## 下一轮
-
-1. Peck 1.1.12 提交后 → 让 Codex 在 Peck 仓库做 v0.4.0：「读 engine-pdf 的 AGENTS.md、HANDOFF.md、ROADMAP.md『v0.4.0 接 Peck』，再读 Peck 的 CLAUDE.md；照步骤 1–5 做，Peck 的改动守 Peck 的规矩，引擎的改动在 engine-pdf 做；做完两边都写 HANDOFF」。Codex 做完回到 Claude 审核、commit、打 tag。
-2. 站主批了计划之后 → Codex 做 v0.5.0 Phase 1：「读 AGENTS.md、HANDOFF.md、ROADMAP.md『v0.5.0』、design §7、decisions/0009；做 Phase 1（PDFKit 写盘实测、页标签对照、改动单类型、新样本），实测结论写进 design §6，改动单类型列进 HANDOFF 等 Claude 审」。

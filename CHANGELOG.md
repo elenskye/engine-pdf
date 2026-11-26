@@ -2,6 +2,19 @@
 
 每个发出去的版本（tag `v<版本>`）：公共接口变化、App 升级要改什么。
 
+## v0.5.0
+
+页面与结构、预览级编辑（`ROADMAP.md` v0.5.0）。
+
+- **页标签行为变了**：源文件没有 `/PageLabels` 时，`Document::label` 和逐页读取的 `label` 返回 `None`（以前给物理页码的数字，和 PDF.js 不一致）。App 显示时回退到物理页码。
+- **读**：`Document::info`、`outline`、`annotations(page)`、`fields(&Cancel)`；`open_with_password` / `from_bytes_with_password` 收 `Zeroizing<String>`。
+- **改**：`edit::apply(doc, others, &Plan, &Save, &Cancel)` 交回新字节，原文件不动。`Plan` 管页序（合并、插入、删除、旋转、重排、抽页）、加删标注（10 种）、填表、目录、文件信息；`Save` 管烧平、设密码、去密码。`Plan` 的 JSON 是 camelCase、`kind` 标签，和 `web/src/plan.ts` 一一对应。
+- **写法**：lopdf 在原文件的对象上写（`decisions/0017`）。页序不变时其余内容原样保留；调页序时页标签、链接、目录、结构树跟着页走。
+- **新建**：`compose::images` 照片打包，`compose::assemble` 拼 PDF（带链接、目录、信息）。
+- **Web 套件**：`web/`（`@elenskye/engine-pdf-web`），PDF.js 6.5 上的无样式编辑逻辑，App 从同一 tag 构建离线包（`decisions/0016`）。试用页 `examples/studio`。
+- **`Error` 新增种类**：密码（`WrongPassword` 等 4 种）、改动单（`InvalidSource`、`InvalidRotation`、`InvalidTarget`、`InvalidGeometry` 等）、表单（`FieldNotFound` 等）、新建（`EmptyImages`、`ImageInput`、`EmptyAssembly`）。`Error` 没标 `non_exhaustive`，App 里穷尽的 `match` 要补分支。
+- 新依赖 `lopdf`（MIT，仅 macOS）。
+
 ## v0.4.0
 
 先单独发版（2026-11-25 站主定），让 v0.5.0 开工；Peck 接入时再发现的引擎问题走之后的版本。

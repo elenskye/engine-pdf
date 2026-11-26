@@ -1,5 +1,8 @@
 use std::{convert::Infallible, marker::PhantomData, rc::Rc};
 
+use zeroize::Zeroizing;
+
+use crate::edit::{Annotation, Field, Info, OutlineItem, Plan, Save};
 use crate::{Cancel, Error, Image, ImageFormat, OcrBounds, OcrLine, OcrOptions};
 
 pub(crate) fn warm_up(_: &OcrOptions) -> Result<(), Error> {
@@ -8,8 +11,36 @@ pub(crate) fn warm_up(_: &OcrOptions) -> Result<(), Error> {
 
 pub(crate) struct Pdf(Infallible, PhantomData<Rc<()>>);
 
+pub(crate) fn apply(_: &Pdf, _: &[&Pdf], _: &Plan, _: &Save, _: &Cancel) -> Result<Vec<u8>, Error> {
+    Err(Error::Unsupported)
+}
+
+pub(crate) fn info(doc: &Pdf) -> Info {
+    match doc.0 {}
+}
+
+pub(crate) fn outline(doc: &Pdf) -> Vec<OutlineItem> {
+    match doc.0 {}
+}
+
+pub(crate) fn annotations(_: &Pdf, _: u32) -> Result<Vec<Annotation>, Error> {
+    Err(Error::Unsupported)
+}
+
+pub(crate) fn fields(_: &Pdf, _: &Cancel) -> Result<Vec<Field>, Error> {
+    Err(Error::Unsupported)
+}
+
+pub(crate) fn images(_: &[crate::compose::ImageSource<'_>], _: &Cancel) -> Result<Vec<u8>, Error> {
+    Err(Error::Unsupported)
+}
+
 impl Pdf {
     pub(crate) fn from_bytes(_: &[u8]) -> Result<Self, Error> {
+        Err(Error::Unsupported)
+    }
+
+    pub(crate) fn from_bytes_with_password(_: &[u8], _: &Zeroizing<String>) -> Result<Self, Error> {
         Err(Error::Unsupported)
     }
 

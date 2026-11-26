@@ -49,7 +49,7 @@ engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库�
 ## 工程约定
 
 - Mac 专用：PDFKit、Vision、AppKit 经 `objc2` 在进程里调（`decisions/0003`）。非 macOS 也要能编译，调用返回 `Error::Unsupported`。
-- 写文件只有 `edit::apply` 一处（PDFKit）；PDFium 只做 PDFKit 做不到的（移动删除对象、涂黑），在 feature `pdfium` 后面，默认关（`decisions/0010`）。
+- PDF 编辑统一走 `edit::apply`。lopdf 在原文件的对象上写（`decisions/0017`，经 `src/sys/objects.rs` 读写）；PDFKit 负责读和画新标注的外观。PDFium 只做移动删除对象、涂黑等操作，放在默认关闭的 `pdfium` feature 后面（`decisions/0010`）。
 - `web/`：TS 严格模式，`pdfjs-dist` 是 peer 依赖（钉 6.5 这一线）；`web/src/plan.ts` 和 Rust 的 `edit::Plan` 一一对应，两边的测试吃同一套 `tests/fixtures/plan/`。
 - 全部接口是**同步**的；异步的 App 用 `spawn_blocking` 包。`Document` 不跨线程（`!Send`）。长任务都收 `Cancel`，逐页检查。
 - 页码一律是**原文件的物理页码，从 1 起**；页标签（印在页上的页码）另给。

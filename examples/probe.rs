@@ -12,6 +12,7 @@ use engine_pdf::{
 const USAGE: &str = concat!(
     "cargo run --release --example probe -- <PDF> [--pages <页码>] [--ocr] [--render <目录>] [--text]\n",
     "cargo run --release --example probe -- <PDF> --mathpix <页码> [--text]",
+    "\ncargo run --release --example probe -- <PDF> --labels",
 );
 
 fn main() -> ExitCode {
@@ -42,6 +43,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut render_dir = None;
     let mut print_text = false;
     let mut use_ocr = false;
+    let mut labels = false;
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--pages") => {
@@ -57,6 +59,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             Some("--text") => print_text = true,
             Some("--ocr") => use_ocr = true,
+            Some("--labels") => labels = true,
             Some("--mathpix") => {
                 if mathpix_spec.is_some() {
                     return Err("请只指定一次 --mathpix。".into());
@@ -72,10 +75,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    if labels
+        && (spec.is_some()
+            || use_ocr
+            || render_dir.is_some()
+            || mathpix_spec.is_some()
+            || print_text)
+    {
+        return Err("--labels 请单独使用。".into());
+    }
     if mathpix_spec.is_some() && (spec.is_some() || use_ocr || render_dir.is_some()) {
         return Err("--mathpix 自带选页，请单独使用，可加 --text。".into());
     }
     let document = Document::open(path)?;
+    if labels {
+        let labels: Vec<_> = (1..=document.page_count())
+            .map(|page| document.label(page))
+            .collect();
+        println!("{}", serde_json::to_string(&labels)?);
+        return Ok(());
+    }
     if let Some(spec) = mathpix_spec {
         return recognize_mathpix(&document, &spec, print_text);
     }

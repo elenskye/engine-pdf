@@ -3,7 +3,9 @@
 //! 接口按 `ROADMAP.md` 的 Phase 实现，设计见 `docs/design.md`。
 
 mod cancel;
+pub mod compose;
 mod document;
+pub mod edit;
 mod error;
 pub mod mathpix;
 pub mod ocr;
@@ -28,6 +30,6 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 mod tests {
     #[test]
     fn version_matches_manifest() {
-        assert_eq!(super::VERSION, "0.4.0");
+        assert_eq!(super::VERSION, "0.5.0");
     }
 }

@@ -26,6 +26,8 @@ fn opens_paths_and_reports_distinct_input_errors() {
     );
     assert_eq!(doc.label(0), None);
     assert_eq!(doc.label(7), None);
+    let unlabeled = Document::from_bytes(&Sample::TextEn.generate().unwrap()).unwrap();
+    assert_eq!(unlabeled.label(1), None);
     assert!(matches!(
         doc.text(7),
         Err(Error::PageOutOfRange { page: 7, total: 6 })

@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use zeroize::Zeroizing;
+
 use crate::{Cancel, Error, OcrOptions, OcrText, ocr, sys};
 
 /// 已打开的 PDF。必须在创建它的线程上使用。
@@ -24,12 +26,52 @@ impl Document {
         sys::Pdf::from_bytes(bytes).map(Self)
     }
 
+    /// 用打开密码或权限密码读取指定路径的 PDF。
+    pub fn open_with_password(
+        path: impl AsRef<Path>,
+        password: &Zeroizing<String>,
+    ) -> Result<Self, Error> {
+        if !cfg!(target_os = "macos") {
+            return Err(Error::Unsupported);
+        }
+        Self::from_bytes_with_password(&std::fs::read(path)?, password)
+    }
+
+    /// 用打开密码或权限密码从字节打开 PDF。
+    pub fn from_bytes_with_password(
+        bytes: &[u8],
+        password: &Zeroizing<String>,
+    ) -> Result<Self, Error> {
+        sys::Pdf::from_bytes_with_password(bytes, password).map(Self)
+    }
+
     pub fn page_count(&self) -> u32 {
         self.0.page_count()
     }
 
+    /// 读取文件信息及当前打开权限。
+    pub fn info(&self) -> crate::edit::Info {
+        crate::sys::info(&self.0)
+    }
+
+    /// 读取目录书签，保留层级和可识别的阅读目标。
+    pub fn outline(&self) -> Vec<crate::edit::OutlineItem> {
+        crate::sys::outline(&self.0)
+    }
+
+    /// 读取指定原始物理页的标注。表单控件由表单接口读取。
+    pub fn annotations(&self, page: u32) -> Result<Vec<crate::edit::Annotation>, Error> {
+        crate::sys::annotations(&self.0, page)
+    }
+
+    /// 读取逻辑表单字段及其各个控件位置。
+    pub fn fields(&self, cancel: &Cancel) -> Result<Vec<crate::edit::Field>, Error> {
+        cancel.check()?;
+        crate::sys::fields(&self.0, cancel)
+    }
+
     /// 取指定物理页的页标签（印在页上的页码，来自 `/PageLabels`，如 "iv"）。
-    /// PDF 没定义页标签时 PDFKit 给物理页码的数字；页码越界时返回 `None`。
+    /// PDF 未定义 `/PageLabels` 或页码越界时返回 `None`。
     pub fn label(&self, page: u32) -> Option<String> {
         self.0.label(page)
     }
@@ -77,6 +119,10 @@ impl Document {
 
     pub(crate) fn original_bytes(&self) -> &[u8] {
         self.0.original_bytes()
+    }
+
+    pub(crate) fn native(&self) -> &sys::Pdf {
+        &self.0
     }
 }
 

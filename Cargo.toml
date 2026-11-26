@@ -1,6 +1,6 @@
 [package]
 name = "engine-pdf"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Peck、Pith、Pomelo 共用的 Mac PDF 引擎：打开、取字、渲染、本机 OCR、Mathpix 识别"
@@ -9,21 +9,22 @@ publish = false
 
 [features]
 fake = ["dep:zip"]
-samples = ["dep:objc2-core-text", "objc2-core-foundation/CFAttributedString", "objc2-core-foundation/CFData", "objc2-core-foundation/CFDictionary", "objc2-core-foundation/CFString", "objc2-core-graphics/CGDataConsumer", "objc2-core-graphics/CGPDFContext"]
+samples = ["dep:objc2-core-text", "objc2-core-foundation/CFAttributedString", "objc2-core-foundation/CFDictionary", "objc2-core-foundation/CFString"]
 
 [dependencies]
 serde = { version = "^1.0.229", features = ["derive"] }
 serde_json = "^1.0.154"
-zeroize = "^1.9.1"
+zeroize = { version = "^1.9.1", features = ["serde"] }
 zip = { version = "^4.6.1", optional = true, default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+lopdf = { version = "^0.42.0", default-features = false }
 objc2 = "^0.6.5"
-objc2-foundation = { version = "^0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSEnumerator", "NSString", "NSValue"] }
-objc2-pdf-kit = { version = "^0.3.2", default-features = false, features = ["std", "PDFDocument", "PDFPage", "objc2-core-foundation", "objc2-core-graphics"] }
-objc2-app-kit = { version = "^0.3.2", default-features = false, features = ["std", "NSBitmapImageRep", "NSImageRep", "objc2-core-graphics"] }
-objc2-core-foundation = { version = "^0.3.2", default-features = false, features = ["std"] }
-objc2-core-graphics = { version = "^0.3.2", default-features = false, features = ["std", "CGAffineTransform", "CGBitmapContext", "CGColorSpace", "CGContext", "CGGeometry", "CGImage", "CGPDFDictionary", "CGPDFDocument", "CGPDFObject", "CGPDFPage", "CGPDFStream"] }
+objc2-foundation = { version = "^0.3.2", default-features = false, features = ["std", "NSArray", "NSData", "NSDate", "NSDictionary", "NSEnumerator", "NSString", "NSURL", "NSUUID", "NSValue"] }
+objc2-pdf-kit = { version = "^0.3.2", default-features = false, features = ["std", "PDFAction", "PDFActionGoTo", "PDFActionURL", "PDFAnnotation", "PDFAnnotationUtilities", "PDFBorder", "PDFDestination", "PDFDocument", "PDFOutline", "PDFPage", "objc2-app-kit", "objc2-core-foundation", "objc2-core-graphics"] }
+objc2-app-kit = { version = "^0.3.2", default-features = false, features = ["std", "NSAttributedString", "NSBezierPath", "NSBitmapImageRep", "NSColor", "NSColorSpace", "NSFont", "NSGraphicsContext", "NSImage", "NSImageRep", "NSStringDrawing", "objc2-core-foundation", "objc2-core-graphics"] }
+objc2-core-foundation = { version = "^0.3.2", default-features = false, features = ["std", "CFData"] }
+objc2-core-graphics = { version = "^0.3.2", default-features = false, features = ["std", "CGAffineTransform", "CGBitmapContext", "CGColorSpace", "CGContext", "CGDataConsumer", "CGGeometry", "CGImage", "CGPDFArray", "CGPDFContext", "CGPDFDictionary", "CGPDFDocument", "CGPDFObject", "CGPDFPage", "CGPDFStream"] }
 objc2-core-text = { version = "^0.3.2", optional = true, default-features = false, features = ["std", "CTFont", "CTLine", "CTStringAttributes", "objc2-core-graphics"] }
 objc2-vision = { version = "^0.3.2", default-features = false, features = ["std", "VNObservation", "VNRecognizeTextRequest", "VNRequest", "VNRequestHandler", "VNTypes", "objc2-core-foundation", "objc2-core-graphics"] }
 ureq = { version = "^3.5.1", default-features = false, features = ["native-tls-no-default"] }

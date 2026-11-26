@@ -1,8 +1,8 @@
 # engine-pdf
 
-Peck、Pith、Pomelo 共用的 Mac PDF 引擎（Rust 库）。App 把 PDF 和要的页码交进来，拿回每页的文字、页图或识别结果；PDF 处理只维护这一份，界面、权限、业务数据、费用确认和记账各 App 自己管。
+Peck、Pith、Pomelo 共用的 Mac PDF 引擎。Rust 库负责读取、识别和保存编辑结果，`web/` 提供无样式的 PDF.js 编辑套件。界面、文件权限、业务数据、费用确认和记账由各 App 管理。
 
-> 现在是 **v0.4.0**：本机读取、本机 OCR、Mathpix 都能用，逐页读取默认每页附图；下一步是页面与结构、预览级编辑（v0.5），PDFium 级编辑（v0.6），再接 Pomelo（v0.7）、Pith（v0.8）。进度见 `ROADMAP.md`，交接见 `HANDOFF.md`。
+> 当前 **v0.5.0**（页面与结构、预览级编辑）。进度见 `ROADMAP.md`，交接见 `HANDOFF.md`。
 
 ## 能做什么
 
@@ -12,6 +12,8 @@ Peck、Pith、Pomelo 共用的 Mac PDF 引擎（Rust 库）。App 把 PDF 和要
 - **拆页**：把指定页复制成一份新 PDF（给 Mathpix 只传这几页用）；统计哪些页有图片。
 - **本机 OCR**：扫描页在本机用 macOS Vision 识别，断网也行；简体、繁体、英文，两栏、多栏按阅读顺序拼好，另给每行的置信度和位置。`read` 里开 `Ocr::auto()` 就会自动识别没有文字层的页。
 - **Mathpix**：公式、表格这类难页——先在本地报价（第几页、预计多少钱），App 确认后只拆出、上传这几页，结果映射回原页码，不管成败都删掉 Mathpix 那边的副本；可以分步续跑。`fake` feature 给测试和模拟模式用。
+- **编辑**：一张 `edit::Plan` 表达页面重排、插入、旋转、抽页、目录、链接、文档信息、标注（高亮、下划线、删除线、便签、文本框、绘图、形状、图片、链接）和表单值。`edit::apply` 返回新 PDF 字节，保存选项还支持烧平和设置或去掉密码。在原文件的对象上改：没动到的页面内容、页标签、表单、链接原样保留。
+- **新建**：`compose::images` 把照片打包成 PDF，`compose::assemble` 拼接 PDF 并附上目录、链接或文档信息。
 
 只支持 macOS（PDFKit 经 objc2 在进程里调）；其他平台能编译，打开文档返回 `Error::Unsupported`。
 
@@ -26,11 +28,28 @@ engine-pdf = { git = "https://github.com/elenskye/engine-pdf", tag = "v0.4.0" }
 
 升级改 tag，回退改回上一个 tag。每版接口变化见 `CHANGELOG.md`。
 
+接入 Web 编辑器的 App 从同一个引擎 tag 构建离线包。`pnpm --dir web install --frozen-lockfile` 安装构建依赖，`pnpm --dir web build` 生成模块和声明，`pnpm --dir web pack` 生成可用 `pnpm add <包路径>` 安装的包。App 提供 `pdfjs-dist` 6.5（已验 6.5.438）、`pdf_viewer.css` 及 worker 等本地资源。挂载和改动单接口见 `docs/design.md` §7.5。
+
 ## 开发
 
+安装 Node.js 22.13 或更新版本及 pnpm，首次运行先安装 Web 依赖。
+
 ```bash
+pnpm --dir web install --frozen-lockfile
 ./scripts/check.sh
 ```
+
+## 本地试用页
+
+```bash
+pnpm --dir web build
+cargo run --features samples --example make_samples
+cargo run --release --example studio -- samples/out/mixed.pdf
+```
+
+用浏览器打开终端打印的 `127.0.0.1` 地址。也可省略 PDF 路径，再在页面中选择文件。试用页把改动单交给 Rust，保存后自动打开 `local/studio/` 下的新副本。用 `form.pdf` 试文本框、勾选、单选和下拉，再在保存选项中设置密码。完整验收清单见 `ROADMAP.md`。
+
+## 样本和读取验证
 
 ```bash
 cargo run --features samples --example make_samples

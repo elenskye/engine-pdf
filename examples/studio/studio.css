@@ -1,0 +1,70 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, "PingFang SC", sans-serif;
+  font-size: 14px;
+  color: #242830;
+  background: #f4f5f7;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; height: 100dvh; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+button, input, select { font: inherit; }
+button, .button, .status a {
+  border: 1px solid #c8cdd5; border-radius: 6px; background: #fff; color: inherit;
+  padding: .35rem .65rem; text-decoration: none; cursor: pointer;
+}
+button:hover, .button:hover { background: #f2f6ff; }
+button:disabled { opacity: .5; cursor: default; }
+button[aria-pressed="true"], [aria-current="true"] { border-color: #4765c4; background: #e8efff; }
+button.primary { background: #234998; color: #fff; border-color: #234998; }
+button.primary:not(:disabled):hover { background: #183a82; }
+input, select { border: 1px solid #c5cad3; border-radius: 4px; background: #fff; padding: .25rem .4rem; }
+input[type="color"] { padding: 0; width: 30px; }
+input[type="number"] { width: 4rem; }
+input[type="range"] { width: 70px; padding: 0; }
+label { display: inline-flex; gap: .35rem; align-items: center; }
+.header, .toolbar, .navigation { background: #fff; border-bottom: 1px solid #d9dde4; }
+.header { display: flex; align-items: center; gap: 1rem; padding: .65rem 1rem; }
+.header h1 { margin: 0; font-size: 1.14rem; white-space: nowrap; }
+.document-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #505967; }
+.toolbar { display: grid; gap: .38rem; padding: .45rem 1rem; }
+.buttons { display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; }
+.workspace { min-height: 0; display: grid; grid-template-columns: clamp(210px, 22vw, 300px) minmax(0, 1fr); }
+.sidebar { overflow: auto; padding: .65rem; background: #fcfcfd; border-right: 1px solid #d9dde4; }
+.sidebar details + details { border-top: 1px solid #dddfe6; }
+.sidebar summary { cursor: pointer; font-weight: 650; padding: .5rem 0; }
+.sidebar details > label, #lock-options > label { margin: .25rem 0; display: flex; }
+.sidebar input[type="text"], .sidebar input[type="password"] { min-width: 0; width: 100%; }
+.section-actions { margin: .35rem 0; }
+.pages { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; padding: 0; list-style: none; }
+.pages button { width: 100%; display: grid; justify-items: center; gap: .35rem; }
+.pages canvas { max-width: 100%; border: 1px solid #e0e3e9; background: #fff; }
+.pages [data-drop="true"] { outline: 2px solid #234998; }
+#outline ul, .annotations { list-style: none; padding-left: .7rem; }
+#outline button { text-align: left; width: 100%; }
+.annotations li { display: flex; align-items: center; gap: .4rem; padding: .22rem 0; }
+.annotations span { flex: 1; overflow-wrap: anywhere; }
+.reader { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; }
+.navigation { padding: .35rem .65rem; }
+.navigation input[type="search"] { width: 9rem; }
+.viewport { position: relative; min-height: 0; background: #e4e7ed; }
+#viewer-container { position: absolute; inset: 0; overflow: auto; }
+#viewer-container[data-draw="true"] { cursor: crosshair; touch-action: none; }
+#empty { position: absolute; inset: 0; display: grid; place-items: center; color: #4e5869; }
+.pdfViewer .page { box-sizing: content-box; }
+.status { display: flex; gap: .5rem; align-items: center; padding: .4rem 1rem; min-height: 2.6rem; background: #fff; }
+.status span { flex: 1; }
+.status [data-error="true"] { color: #8e231b; }
+dialog { color: inherit; border: 1px solid #c8cdd5; border-radius: 10px; padding: 1.1rem; max-width: calc(100vw - 2rem); }
+dialog::backdrop { background: #282e3a66; }
+dialog form { display: grid; gap: .8rem; }
+dialog h2 { margin: 0; font-size: 1.05rem; }
+dialog .buttons { justify-content: flex-end; }
+#signature-pad { display: block; max-width: 100%; border: 1px solid #b8c1cd; touch-action: none; }
+@media (max-width: 720px) {
+  .workspace { grid-template-columns: clamp(138px, 31vw, 210px) minmax(0, 1fr); }
+  .toolbar { padding-inline: .5rem; }
+  .header h1 { font-size: 1rem; }
+  .header { gap: .45rem; padding-inline: .5rem; }
+  .pages { grid-template-columns: minmax(0, 1fr); }
+}

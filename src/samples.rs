@@ -11,6 +11,10 @@ pub enum Sample {
     Mixed,
     ScannedTwoColumn,
     Labels,
+    Outline,
+    Form,
+    Annotated,
+    Links,
     Locked,
     Damaged,
     NotPdf,
@@ -20,7 +24,7 @@ pub enum Sample {
 pub const LOCKED_PASSWORD: &str = "engine-pdf-fixture";
 
 impl Sample {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 14] = [
         Self::TextEn,
         Self::TextZh,
         Self::TwoColumnEn,
@@ -28,6 +32,10 @@ impl Sample {
         Self::Mixed,
         Self::ScannedTwoColumn,
         Self::Labels,
+        Self::Outline,
+        Self::Form,
+        Self::Annotated,
+        Self::Links,
         Self::Locked,
         Self::Damaged,
         Self::NotPdf,
@@ -42,6 +50,10 @@ impl Sample {
             Self::Mixed => "mixed.pdf",
             Self::ScannedTwoColumn => "scanned_two_column.pdf",
             Self::Labels => "labels.pdf",
+            Self::Outline => "outline.pdf",
+            Self::Form => "form.pdf",
+            Self::Annotated => "annotated.pdf",
+            Self::Links => "links.pdf",
             Self::Locked => "locked.pdf",
             Self::Damaged => "damaged.pdf",
             Self::NotPdf => "not_pdf.txt",
@@ -56,8 +68,16 @@ impl Sample {
     /// 指定物理页的源文字。扫描文字同样有转录，两栏按左栏、右栏排列。
     pub fn source_text(self, page: u32) -> Option<String> {
         let index = page.checked_sub(1)? as usize;
-        if self == Self::Labels {
-            return Some(LABEL_TEXT.get(index)?.to_string());
+        let text: &[&str] = match self {
+            Self::Labels => &LABEL_TEXT,
+            Self::Outline => &["Outline introduction", "Outline detail", "Outline appendix"],
+            Self::Form => &["Form fields\nText\nCheckbox\nRadio\nDrop-down"],
+            Self::Annotated => &["Highlight Underline Strikeout"],
+            Self::Links => &["Link source", "Link destination"],
+            _ => &[],
+        };
+        if !text.is_empty() {
+            return text.get(index).map(|line| (*line).to_owned());
         }
         match *self.pages().get(index)? {
             Page::Text(lines) | Page::Scan(lines) => Some(lines.join("\n")),
@@ -79,7 +99,13 @@ impl Sample {
                 right: RIGHT_ZH,
             }],
             Self::Mixed => &MIXED,
-            Self::Labels | Self::Damaged | Self::NotPdf => &[],
+            Self::Labels
+            | Self::Outline
+            | Self::Form
+            | Self::Annotated
+            | Self::Links
+            | Self::Damaged
+            | Self::NotPdf => &[],
         }
     }
 }
@@ -95,6 +121,15 @@ pub fn scan(doc: &crate::Document, page: u32) -> Result<Vec<u8>, Error> {
 /// - `catalog_extra`：加进 Catalog 字典的条目，如 `/PageLabels << … >>`；不需要就给 `""`。
 /// - `pages`：每页 `(页字典的额外条目, 内容流)`。页字典要自己写 `/MediaBox`；内容流里可以用 `/F1`（Helvetica）。
 pub fn raw_pdf(catalog_extra: &str, pages: &[(&str, &str)]) -> Vec<u8> {
+    raw_pdf_with_objects(catalog_extra, pages, &[])
+}
+
+/// 同 [`raw_pdf`]，另在页之后追加对象，编号从 `4 + 2 × 页数` 起（第 n 页是 `2n + 2 0 R`）。
+pub fn raw_pdf_with_objects(
+    catalog_extra: &str,
+    pages: &[(&str, &str)],
+    extra_objects: &[&str],
+) -> Vec<u8> {
     use std::fmt::Write;
 
     let kids = (0..pages.len())
@@ -116,6 +151,7 @@ pub fn raw_pdf(catalog_extra: &str, pages: &[(&str, &str)]) -> Vec<u8> {
             stream.len()
         ));
     }
+    objects.extend(extra_objects.iter().map(|object| (*object).to_owned()));
     let mut pdf = String::from("%PDF-1.4\n");
     let mut offsets = Vec::new();
     for (index, object) in objects.iter().enumerate() {

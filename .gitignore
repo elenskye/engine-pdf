@@ -6,6 +6,10 @@
 
 # 本机私有：用户自己的 PDF、真实验收的原始回应
 /local/
+/web/node_modules/
+/web/dist/
+/output/playwright/
+/.playwright-cli/
 
 .DS_Store
 .claude/worktrees/

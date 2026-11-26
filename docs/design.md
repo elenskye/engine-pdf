@@ -1,6 +1,6 @@
 # engine-pdf 设计稿
 
-> 依据 `docs/brief.md`、`docs/brief-2.md`、`docs/brief-pomelo.md`，选型见 `docs/decisions/`。§1–3 已实现（v0.2.0 本机读取，v0.3.0 本机 OCR 和 Mathpix）；§4 是各 App 的接入计划；§6 是实测结论；§7（v0.5.0 页面与结构、预览级编辑）、§8（v0.6.0 PDFium 级）是计划。
+> 依据 `docs/brief.md`、`docs/brief-2.md`、`docs/brief-pomelo.md`，选型见 `docs/decisions/`。§1–3 已实现（v0.2.0 本机读取，v0.3.0 本机 OCR 和 Mathpix）；§4 是各 App 的接入计划；§6 是实测结论；§7 是 v0.5.0 页面与结构、预览级编辑（已实现），§8（v0.6.0 PDFium 级）是计划。
 
 ## 0. 现状
 
@@ -115,7 +115,7 @@ pub enum Content {
 
 - `pages::parse(spec, total, max)`：Peck 的语法和测试原样搬来（`3`、`1-5`、`1,3-4`、`4-`，中文逗号也行，排序去重，右端超出截到最后一页）。
 - `Document::split` 也按传入顺序、允许重复，但任一页越界整个返回错误（要的是一份完整的 PDF）。
-- `Page.index` 永远是原文件物理页码；`Page.label` 来自 PDFKit 的 `PDFPage.label`，和 PDF.js 的 `getPageLabels()` 读的是同一个 `/PageLabels`。**引用定位存 `index`，显示用 `label`**（Pith 阅读器按 `pageIndex = index - 1` 跳转）。验收里有一份带罗马数字前言的样本专门核对（§5）。
+- `Page.index` 永远是原文件物理页码；文档有 `/PageLabels` 时，`Page.label` 来自 PDFKit 的 `PDFPage.label`，否则返回 `None`。**引用定位存 `index`，显示有标签时用 `label`**（Pith 阅读器按 `pageIndex = index - 1` 跳转）。两套读法的逐页对照见 §6。
 - Mathpix 的结果也映射回 `index`（§3.4）。
 
 ### 1.5 取消与进度
@@ -381,6 +381,10 @@ Pomelo 上传 Word 用 `mathpix::submit_file(bytes, mime, estimated_pages, &keys
 | `mixed` | 10 页：1 文字、2 英文扫描（文字画成图）、3 空白、4 文字、5 中文扫描、6 无字的图、7 文字、**8 公式和表格（画成图）**、9 空白、10 文字 | 页类型、断网 OCR、Mathpix 只传第 8 页 |
 | `scanned_two_column` | 两栏中文扫描 | OCR 的阅读顺序 |
 | `labels` | 前 3 页标 i–iii，之后 1 起 | 页标签、引用定位 |
+| `outline` | 多层目录，含页内和网址目标 | 目录层级、目标页和高度 |
+| `form` | 文本、勾选、单选、下拉 | 控件值和阅读器兼容性 |
+| `annotated` | 标注及其外观 | 存盘和画面比较 |
+| `links` | 页内链接和网址链接 | 重排后跳到正确的页和高度，网址保持一致 |
 | `locked` / `damaged` / `not_pdf` | 用户密码；截断的 `text_en`；一段纯文本 | 明确的错误 |
 | 300 页 | `tests/read.rs` 里把 `mixed` 拆页重复 30 次 | 连续交付与中途取消 |
 | 边界页 | `samples::raw_pdf` 手写：旋转、CropBox、只有页码或一句标题的页 | 页图范围、短文字不丢 |
@@ -417,26 +421,48 @@ Pomelo 上传 Word 用 `mathpix::submit_file(bytes, mime, estimated_pages, &keys
 
 - 真跑 `mixed` 第 3（空白）、5（中文扫描）、8（公式和表格）页：三页都精确映射回原页码，空白页交回空内容，公式是正确的 LaTeX，表格完整；远端已删；共 $0.015。另有一次单页（第 8 页）真跑，$0.005。
 
-**还要验的**：PDFKit 页标签和 PDF.js 是否一致（v0.5.0 Phase 1，预期没有 `/PageLabels` 时 PDFKit 给「8」、PDF.js 给空）；PDFKit 整份重写对真实论文的影响、macOS 27 上 PDFKit 画高亮时多出评论气泡（Apple 开发者论坛有报告）是否会写进文件（v0.5.0 Phase 1）；真实 App 里的确认框、断网、安装包（接各 App 时）。
+**页标签（v0.5.0 Phase 1–2）**
+
+- `scripts/labels.mjs` 用 PDF.js 6.5.438 逐页对照 `labels` 和 28 份真实论文，合计 538 页。修正前，14 份未定义 `/PageLabels` 的文档有 236 页差异，PDFKit 返回物理页码，PDF.js 返回空；显式标签逐页一致。引擎查 Catalog 后，538 页全部一致。
+
+**写入（v0.5.0，macOS 27.2.1）**
+
+- PDFKit 整份重写（Phase 1–6 的做法）会丢掉 `/PageLabels`、`/AcroForm`、结构树和内容流里的 `/ActualText`，要逐项补回，补回后仍有论文过不了文字层核对。Claude 审核时改成 lopdf 在原文件的对象上写，PDFKit 只画新标注的外观（`decisions/0017`）。
+- 新写法在 38 份真实论文（28 份 Zotero 副本 + 10 份 `local/pdf`，含 5 份知网论文、4 份带结构树的期刊论文、84 页杂志）上逐份跑：整份倒序、只转一页、倒序前三页加复制一页再删末页、第 1 页加全套 13 种标注再删掉、读回的标注原样重建、设打开密码和权限再去掉、和另一份论文合并。共 1,778 项检查通过。
+  - 页序不变和单一来源调页序时，逐页文字层不变，页标签、目录、全部已有标注和链接（含 arXiv 原本找不到目标的具名链接）保留。
+  - 编辑耗时 4–50 ms，原做法最慢 7.9 s，合并要 15 s。
+  - 没过的 6 项都是「有结构树的论文和没有结构树的合并」。这时整份不带结构树，带结构树那份的页按版面取字（和「预览」一样）。两份都有结构树时合并后取字不变。
+- 知网论文的交叉引用表写成 `xref 0 133`，lopdf 读不了，引擎扫描对象重建。PDFKit 写的 CFF 字体流没有 `/Length`，lopdf 会读成空流，引擎补回；否则「预览」里中文文本框画成乱码，PDF.js 正常。
+- 用压缩对象流的文件，lopdf 写回时展开，大小最多约 1.6 倍（4,702 个对象的论文）。其余在 0.9–1.1 倍之间。
+- 测试的加密参数在该系统上写成 Standard RC4 128 位（R3）。
+
+**标注、表单与密码（v0.5.0 Phase 3–4）**
+
+- 自由文本和图片图章的标准外观由 PDFKit 画出。PDF.js 6.5.438 能显示文本透明度、边框颜色及透明 PNG。删除后，标注区域恢复底图，便签弹窗一并清除。
+- 实际引擎输出的普通表单与非零裁切原点、旋转 90° 的表单，经 PDFKit 和 PDF.js 6.5.438 读回，文字、勾选、单选、下拉及中文外观正确。烧平采用矢量层，文字层和导航链接读回保持。
+- PDFKit 会扩展部分权限组合。普通读者的权限以加密字典的原始位值为准。错密码、读者权限、去密码和换密码用生成样本验证。详见 `decisions/0015`。
+
+真实 App 的确认框、断网和安装包在各 App 接入时验收。
 
 ---
 
-## 7. 页面与结构、预览级编辑（v0.5.0，计划）
+## 7. 页面与结构、预览级编辑（v0.5.0）
 
-目标是 macOS「预览」的水准：高亮、批注、绘图、文本框、图片签名；合并、插入、删除、旋转、重排；填表、设密码；另加读写目录书签、照片打包、拼 PDF。做法见 `decisions/0009`：一张改动单，引擎用 PDFKit 一处写文件，PDF.js 套件只管在页面上编辑。下面的接口是草案，Phase 1 定稿（公共接口的变化由 Claude 审）。
+目标是 macOS「预览」的水准：高亮、批注、绘图、文本框、图片签名；合并、插入、删除、旋转、重排；填表、设密码；另加读写目录书签、照片打包、拼 PDF。实现顺序见 `ROADMAP.md`，写入选型见 `decisions/0009`。
 
 ### 7.1 读
 
 ```rust
 doc.info();                     // Info { title, author, subject, keywords, creator, producer, created, modified, encrypted, permissions }
 doc.outline();                  // Vec<OutlineItem { title, target, children }>；target = Page { page, y } | Url | None
-doc.annotations(8)?;            // Vec<Annotation>：已有标注（id、种类、位置、颜色、内容、作者）
-doc.fields();                   // Vec<Field { name, kind, value, options, page, rect, read_only }>
-Document::open_with_password(path, &password)?;   // 密码错报 Error::WrongPassword；密码用 Zeroizing 收，不进日志和错误信息
+doc.annotations(8)?;            // Vec<Annotation>，包含可恢复的 MarkKind
+doc.fields(&cancel)?;            // Vec<Field>，一个逻辑字段可带多个控件
+Document::open_with_password(path, &password)?;   // 也可用 from_bytes_with_password
 ```
 
-- **页标签**：v0.5.0 Phase 1 用 PDF.js 6.5（Pith 在用的版本）逐页对照 `labels` 样本和 `~/ResearchLab-test` 的真实论文。预期差异：PDF 没定义 `/PageLabels` 时 PDFKit 给物理页码的数字、PDF.js 给空；引擎改成这时交 `None`（看 Catalog 有没有 `/PageLabels`），和阅读器一致。这是接口行为的变化，写进 CHANGELOG。
+- **页标签**：Catalog 没定义 `/PageLabels` 时返回 `None`，与 PDF.js 6.5 的读法一致。PDFKit 的页标签属性为只读。逐页对照见 §6，接口行为变化在 v0.5.0 发版时写进 CHANGELOG。[Apple PDFPage.label](https://developer.apple.com/documentation/pdfkit/pdfpage/label)
 - 目录的 `target.page` 是物理页码（从 1 起），`y` 是 PDF 坐标；指向别的文件、跑脚本的动作不读（PDF 是数据）。
+- `InfoPatch` 可写标题、作者、主题、关键词和 Creator。`Info` 另读 Producer、创建与修改日期（Unix 秒）、加密状态及权限。改文件信息时写入修改日期，并去掉旧的 XMP 元数据。
 
 ### 7.2 改动单
 
@@ -450,11 +476,13 @@ pub struct Plan {
     pub info: Option<InfoPatch>,
 }
 pub struct Pick { pub source: u32, pub page: u32, pub rotate: i32 }   // source 0 = 本文件，1.. = others[source-1]
-pub struct Save { pub lock: Option<Lock>, pub flatten: bool }        // Lock { owner, user, permissions }；flatten 把标注和表单烧进页面
+pub struct Save { pub lock: Option<Lock>, pub flatten: bool, pub remove_password: bool }
 pub fn apply(doc: &Document, others: &[&Document], plan: &Plan, save: &Save, cancel: &Cancel) -> Result<Vec<u8>, Error>;
 ```
 
 - **页面管理都是 `pages`**：合并 = 两个来源的页接起来；插入 = 在中间放进别的来源的页；删除 = 不列；重排 = 换顺序；旋转 = `rotate`（90 的倍数，叠在原旋转上）；抽页 = 只列几页。重复列同一页也行。
+- 各参与来源的原目录及页内链接随页序重映射。目标页重复时指向第一份，失去目标的页内链接删除，目录标题保留为分组。明确传入的目录替换原有目录。新增链接挂在原 `(source, page)`，内部目标与新目录都采用输出物理页码。
+- `Plan` 的 JSON 使用 camelCase 和 `kind` 标签，见 `tests/fixtures/plan/`。`Save` 由 Rust 调用方提供，密码以 `Zeroizing` 持有。
 - **标注种类**（PDFKit 都有对应的类型）：
 
   | 种类 | 存什么 |
@@ -469,20 +497,29 @@ pub fn apply(doc: &Document, others: &[&Document], plan: &Plan, save: &Save, can
 
   每个标注可带作者和批注文字。
 - **坐标**一律是 PDF 坐标：pt、原点在页面左下（含 CropBox 偏移），和 OCR 的框、PDF.js 的 `convertToPdfPoint` 相同。从左上量的调用方（Pomelo 的 WebKit 排版）用 `Rect::from_top(page_height, x, y, w, h)` 换。
-- **表单**：文本、勾选、单选、下拉；只写字段的值，不跑表单里的计算脚本（算出来的字段不会自己更新，App 要说）。XFA 表单不支持，读到时报种类明确的错。
-- **密码**：`Lock` 设打开密码（可选）、权限密码和权限（打印、复制、修改、加标注）；不给 `lock` 就存成不加密的（去掉密码要先用密码打开）。加密算法以 PDFKit 实际写出的为准，Phase 1 查清楚写进 §6。
-- **原文件不动**：`apply` 只交回字节。PDFKit 存盘是整份重写：数字签名会失效，个别结构可能丢，Phase 1 实测后写进 §6；App 的确认框里怎么说由 App 定。
+- **表单**：文本、勾选、单选、下拉。`Fill.name` 是主文件字段的全限定名称。页序和旋转不变时表单原样留在文件里，调整页面时先烧平（`/Fields` 为空的不算表单）。计算脚本保持未执行，XFA 报 `Error::UnsupportedForm`。见 `decisions/0014`。
+- **密码**：`Lock` 设打开密码（可选）、权限密码及打印、复制、修改、加标注权限。修改加密来源先用权限密码打开，并显式给出新 `lock` 或 `remove_password`。空改动返回原字节。见 `decisions/0015`。
+- **原文件不动**：`apply` 只交回字节。重写后数字签名会失效，App 的确认框里怎么说由 App 定。
 - 错误照 §1.2 的规矩加种类（如 `WrongPassword`、找不到字段、找不到标注、页序越界），`Display` 一句中文。
 
 ### 7.3 一次写入的顺序
 
-`apply` 先按 `pages` 建新文件（从各来源复制页、转好），再删标注、加标注、填表、换目录和文件信息，最后按 `Save` 加密或烧平，交回 `dataRepresentation` 的字节。全程在内存里，每页一个 autorelease pool，每页前查 `Cancel`。v0.6.0 加的对象编辑和涂黑在这一步之前，由 PDFium 先改好那几页（§8）。
+写法见 `decisions/0017`，代码在 `src/sys/write.rs`。
+
+1. 没有改动时返回原字节。
+2. 加密来源先用权限密码导出明文，再写表单值。调页序且要烧平时，先把控件画进来源页面。
+3. lopdf 读入用到的来源，删掉 `remove` 指定的标注和它的弹窗。
+4. 页序不变（可以带旋转）时在原文件的对象上改。否则按 `pages` 把页对象搬进新文件，链接、目录、页标签、结构树照 `decisions/0017` 处理。
+5. 新标注由 PDFKit 在同样几何的空白页上画好后搬到输出页。链接直接写字典，内部目标用输出物理页码。
+6. 写目录和文件信息，存盘。按 `Save` 烧平，最后加密。
+
+处理在内存进行，每页检查 `Cancel`。v0.6.0 的对象编辑和涂黑由 PDFium 先改好对应页面（§8）。
 
 ### 7.4 新建：照片打包、拼 PDF
 
 ```rust
-compose::images(&[ImageSource]) -> Result<Vec<u8>, Error>;                    // ImageSource = Path | Bytes
-compose::assemble(parts: &[&[u8]], how: &Assembly) -> Result<Vec<u8>, Error>; // Assembly { links, outline, info }
+compose::images(&[ImageSource], &Cancel) -> Result<Vec<u8>, Error>;                    // ImageSource = Path | Bytes
+compose::assemble(parts: &[&[u8]], how: &Assembly, &Cancel) -> Result<Vec<u8>, Error>; // Assembly { links, outline, info }
 ```
 
 - `images`：照搬 Pomelo `pdf::images_to_pdf`（NSImage 读 macOS 认的所有格式，含 HEIC，按 EXIF 转正；多页 TIFF 一页一张），连同它的测试。读不了的图报错时说第几张，不带路径。
@@ -496,22 +533,25 @@ compose::assemble(parts: &[&[u8]], how: &Assembly) -> Result<Vec<u8>, Error>; //
 
   | 模块 | 做什么 |
   | --- | --- |
-  | `viewer` | 建 PDFViewer（页标签、缩放、查找），开编辑层 |
-  | `tools` | 切换工具、颜色、粗细。PDF.js 6.5 自带的文本框、绘图、图片、签名、批注、高亮直接用；下划线、删除线、形状 PDF.js 没有，套件自己做（文字选区换成 PDF 坐标照 Pith `src/reader/controller.ts` 的办法） |
+  | `viewer` | `EditorViewer` 接收容器、PDF.js 本地资源路径和界面回调，提供页标签、缩放、查找、原生编辑和表单控件 |
+  | `tools` | `EditorTools` 统一切换工具。文本框、绘图、图片、签名、批注和高亮接 PDF.js。下划线、删除线、便签、形状和链接由套件捕获 PDF 坐标并显示覆盖层 |
   | `capture` | 把编辑器里的内容换成 `Plan.add`、`Plan.remove` |
   | `organizer` | 缩略图（PDF.js 画）、拖动排序、删除、旋转、从别的文件插入 → `Plan.pages` |
   | `forms` | PDF.js 表单层的值 → `Plan.fill` |
   | `outline` | 目录树的增、删、改名、挪位置 → `Plan.outline` |
 
-- **存**：套件只产出改动单（JSON）；App 交给自己的 Rust 调 `edit::apply`，再把新字节交回套件重开。编辑中的撤销用 PDF.js 自己的；存盘后的撤销归 App（留着旧字节）。
-- **签名**：画的、打字的、图片的都换成图片标注；存下来以后再用的签名由 App 保存（钥匙串或 App 数据），套件只要回调。
-- `web/src/plan.ts` 和 Rust 的 `Plan` 一一对应；`tests/fixtures/plan/*.json` 两边的测试都吃，任何一边改了字段另一边的测试就不过。
-- **App 怎么引用**：pnpm 的 git 依赖钉同一个 tag、取 `web` 子目录；不行就照 Atelier 的办法把 `web/dist` 复制进 App（带 `VERSION`、`SHA256SUMS`）。Phase 5 试过再定。
+- **存**：App 调 `EditorViewer.capture(fields)`，合并 `EditorTools.add/remove`、`PageOrganizer.plan()` 和 `OutlineEditor.plan()`。改动单交给 Rust 的 `edit::apply`，新字节交回套件重开。自绘标注接入 PDF.js 的撤销和重做队列。文件保存由 App 负责。
+- **已有标注**：App 提供页面的 Rust `Document::annotations` 结果，套件将 PDF.js 标注 ID 映射到原物理页的 `MarkId`，编辑已有标注时生成删除和新增。套件保留页内链接导航，禁用外链、附件和表单动作。
+- **签名**：`insertSignature` 接收打字、笔迹或图片，捕获时生成透明 PNG。跨文档复用签名由 App 存储和传入。
+- `web/src/plan.ts` 与 Rust 的 `Plan` 使用相同 JSON 字段。`tests/fixtures/plan/*.json` 由 TS 生成对照，Rust 用同一份改动单保存并读回。
+- **App 怎么引用**：从与 Rust 相同的引擎 tag 构建并打包 `web/`，在 App 中安装本地包。复现实测与选型见 `decisions/0016`。
 - PDF.js 编辑器的内部序列化格式会随版本变：套件钉 6.5 这一线，升 PDF.js 要过套件的测试。
 
 ### 7.6 试用页
 
-`cargo run --release --example studio -- <PDF>`：只在 `127.0.0.1` 起一个小服务（标准库写，不加依赖），浏览器打开就能试全部工具；「存」把改动单交给引擎，结果写进 `local/studio/`（不进 Git），不碰原文件。试用页只给站主验收和 Codex 自测，样子从简。
+先构建 `web/`，再运行 `cargo run --release --example studio -- [PDF]`。Rust 标准库服务绑定 `127.0.0.1` 的临时端口，接收同源的 PDF 字节、改动单和分开的密码选项。密码在浏览器中保留于当前会话，Rust 接收后用 `Zeroizing` 持有。保存结果写到 `local/studio/`，浏览器自动重开，也能下载副本。
+
+试用页在编辑区显示主文件原始页码，在缩略图栏整理输出页序。插入页和旋转用于输出预览，保存重开后可直接编辑这些页面。
 
 ---
 
