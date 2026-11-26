@@ -52,7 +52,7 @@ pub(super) fn declared_permissions(pdf: &Pdf) -> Option<Permissions> {
 
 /// 用 lopdf 按标准安全处理器加密（128 位 RC4，R3），再用 PDFKit 打开核对密码和权限位。
 ///
-/// 不用 PDFKit 自己加密：它写出的加密文件在 Edge 等 PDFium 系阅读器里不显示表单控件（v0.5.2 验收发现），
+/// 不用 PDFKit 自己加密：它写出的加密表单在 Edge 里不显示控件（v0.5.2 验收发现），
 /// 有的权限组合它还会多给批注权限。
 pub(super) fn encrypt(bytes: &[u8], lock: &Lock, cancel: &Cancel) -> Result<Vec<u8>, Error> {
     cancel.check()?;

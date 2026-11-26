@@ -1,15 +1,17 @@
 # HANDOFF
 
-更新于 2026-11-26。**v0.5.2 已发布**（tag `v0.5.2`）。v0.5.0 没单独打 tag，内容在 v0.5.1 起的各版里。
+更新于 2026-11-26。**v0.5.2 已完成、验收完毕**（本地 tag `v0.5.2`，待 push）。v0.5.0 没单独打 tag，内容在 v0.5.1 起的各版里。
 
 ## 本轮（v0.5.2：加密改由 lopdf 写）
 
 - **问题**：站主在 Edge 里打开验收用的加密表单，输入密码后只剩文字标签，四个控件全不见。
 - **排查**：
-  - 同一份表单不加密，Edge 显示正常；只设权限密码（不要打开密码）的加密副本，Edge 一样不显示。所以是加密输出的问题，和密码无关。
-  - 同一文件用 lopdf 按同样算法（128 位 RC4）加密，Edge 显示正常。
-  - PDFKit 加密的那份，「预览」的引擎和 PDF.js 都能正常读出四个值。看来是 PDFKit 写出的加密文件和 PDFium 系阅读器（Edge、Chrome）不对付，结构上没看出差别。
-- **改法**：`src/sys/password.rs` 的 `encrypt` 只用 lopdf 加密，PDFKit 只负责打开核对：打开密码、权限密码、权限位。顺带去掉了「PDFKit 多给批注权限时再用 lopdf 重写」的绕路。记进 `decisions/0015`、design §6、CHANGELOG。
+  - 只设权限密码、不要打开密码的副本：PDFKit 加密的，Edge 不显示控件；lopdf 同算法（128 位 RC4）加密的，Edge 正常。
+  - 设了打开密码：不管 PDFKit 还是 lopdf 加密，Edge 都不显示控件。
+  - 同样的文件在 Chrome（站主验）、「预览」的引擎、PDF.js、PDFium（本机 Codex 带的 pypdfium2）里都正常。
+  - Edge 的新阅读器用的是 Adobe 引擎（截图右下角有 Acrobat 标），网上有 Acrobat 自己生成的加密表单在 Edge 里同样不显示的报告。站主定：忽略这个 Edge 的问题。
+  - 试过 AES：lopdf 的 AES-128 三家都能读；AES-256 在 PDFKit 里画成乱码，不能用。没有换算法，仍是 128 位 RC4。
+- **改法**：`src/sys/password.rs` 的 `encrypt` 只用 lopdf 加密，PDFKit 只负责打开核对：打开密码、权限密码、权限位。去掉了「PDFKit 多给批注权限时再用 lopdf 重写」的绕路。记进 `decisions/0015`、design §6、CHANGELOG。
 - 重新生成 `local/acceptance/3-form-locked.pdf`（旧的改名 `3-form-locked-v051.pdf` 留作对照）。
 - 版本 0.5.2：`Cargo.toml`、`Cargo.lock`、`src/lib.rs`、`web/package.json`。
 
@@ -17,18 +19,15 @@
 
 - `./scripts/check.sh` 通过。
 - 38 份真实论文重跑：1,778 项通过，没过的 6 项是已知的有/无结构树合并。其中每份都设打开密码、限权限，并验证不给密码打不开、错密码报错、权限位精确、文字不变、读者不能改、去密码。
-- 新的加密表单：
-  - Edge 里（只设权限密码的副本）四个控件都在。
-  - PDFKit 用打开密码画出的页图、PDF.js、引擎都读出「验收用名字」、勾上、第二个单选、Beta。
-  - 不给密码打不开。
+- ROADMAP「用户验收清单」v0.5.0 三条都完成：标注、页面和目录由 Claude 代验；表单和密码的最后一步由站主在 Chrome 里输密码确认。
 
 ## 等站主
 
-- **一步**：用「预览」或 Edge 打开新的 `local/acceptance/3-form-locked.pdf`，输入样本测试密码（`src/samples.rs` 的 `LOCKED_PASSWORD`），看四个控件的值。Claude 按规矩不在别的 App 的密码框里输密码。
-- push：`git push && git push --tags`（`main`、`v0.5.1`、`v0.5.2`）。
+- push：`git push && git push --tags`（`main` 和 `v0.5.2`；`v0.5.1` 已 push）。
 
 ## 已知问题
 
+- 设了打开密码的表单，Edge 新版阅读器不显示控件（Edge 的限制，不处理）。
 - 用压缩对象流的文件，保存后最多变成原来的 1.6 倍大。
 - 有/无结构树的文件合并时，整份不带结构树。
 - `Mark::Image` 的字节在 JSON 里是数字数组，签名图大时请求体偏大（等接 App 时一起定）。
