@@ -1007,6 +1007,7 @@ fn draw_marks(
         values.filter(|values| values.len() == 4)
     };
     let media = page_box(b"MediaBox").ok_or(Error::SaveFailed)?;
+    let right = media[0].max(media[2]);
     let crop = page_box(b"CropBox");
     let rotate = inherited(output, dictionary, b"Rotate")
         .and_then(|value| value.as_i64().ok())
@@ -1092,7 +1093,8 @@ fn draw_marks(
         .iter()
         .filter_map(|entry| entry.as_reference().ok())
         .collect();
-    for &id in &ids {
+    let mut with_popups = Vec::with_capacity(ids.len());
+    for id in ids {
         let annotation = output
             .get_dictionary_mut(id)
             .map_err(|_| Error::SaveFailed)?;
@@ -1100,8 +1102,42 @@ fn draw_marks(
         if dx != 0.0 || dy != 0.0 {
             translate(annotation, dx, dy);
         }
+        with_popups.push(id);
+        // 便签带一个收起的弹窗，「预览」点图标才会展开批注文字（它自己存的便签也这样）。
+        let is_note = annotation.get(b"Subtype").and_then(Object::as_name).ok() == Some(b"Text");
+        if is_note && !annotation.has(b"Popup") {
+            let rect = annotation
+                .get(b"Rect")
+                .and_then(Object::as_array)
+                .ok()
+                .and_then(|rect| {
+                    rect.iter()
+                        .map(|value| value.as_float().ok())
+                        .collect::<Option<Vec<_>>>()
+                })
+                .filter(|rect| rect.len() == 4)
+                .ok_or(Error::SaveFailed)?;
+            let (left, top) = if rect[2] + 200.0 <= right {
+                (rect[2], rect[3])
+            } else {
+                (rect[0] - 200.0, rect[3])
+            };
+            let popup = output.add_object(dictionary! {
+                "Type" => "Annot",
+                "Subtype" => "Popup",
+                "Rect" => [left, top - 120.0, left + 200.0, top].map(Object::Real).to_vec(),
+                "Parent" => id,
+                "Open" => false,
+                "P" => page,
+            });
+            output
+                .get_dictionary_mut(id)
+                .map_err(|_| Error::SaveFailed)?
+                .set("Popup", popup);
+            with_popups.push(popup);
+        }
     }
-    Ok(ids)
+    Ok(with_popups)
 }
 
 /// 平移标注字典里的页面坐标；外观流按 `Rect` 定位，不用改。

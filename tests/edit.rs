@@ -639,6 +639,17 @@ fn in_place_edits_keep_everything_else_byte_for_byte() {
     }
     let page = edited.get_dictionary((8, 0)).unwrap();
     assert_eq!(page.get(b"Rotate").unwrap().as_i64().unwrap(), 90);
+    // 新便签带一个收起的弹窗，「预览」点图标才展开批注。
+    let notes = edited.get_page_annotations(edited.get_pages()[&2]).unwrap();
+    let note = notes
+        .iter()
+        .find(|annotation| annotation.get(b"Subtype").unwrap().as_name().unwrap() == b"Text")
+        .unwrap();
+    let popup = edited
+        .get_dictionary(note.get(b"Popup").unwrap().as_reference().unwrap())
+        .unwrap();
+    assert_eq!(popup.get(b"Subtype").unwrap().as_name().unwrap(), b"Popup");
+    assert!(!popup.get(b"Open").unwrap().as_bool().unwrap());
     let output = Document::from_bytes(&output).unwrap();
     assert_eq!(output.annotations(1).unwrap().len(), 2);
     assert_eq!(

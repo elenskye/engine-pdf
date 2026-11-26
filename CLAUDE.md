@@ -1,6 +1,6 @@
 # CLAUDE.md — engine-pdf 开发约定
 
-engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库，v0.5.0 起另带无样式的 PDF.js 编辑套件 `web/`）：打开、取字、渲染页图、本机 Vision OCR、Mathpix 识别；v0.5.0 起页面与结构、标注、表单、密码，v0.6.0 起 PDFium 级编辑（`ROADMAP.md`）。界面的样子、文件权限、业务数据、费用确认和记账都归 App；PDF.js 上的编辑逻辑归引擎（`decisions/0009`）。`AGENTS.md` 是本文件的软链接，Codex 读到的就是这一份（里面的「你」也指 Codex）。
+engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库，v0.5.0 起另带无样式的 PDF.js 编辑套件 `web/`）：打开、取字、渲染页图、本机 Vision OCR、Mathpix 识别；v0.5.0 起页面与结构、标注、表单、密码，v0.6.0 起 PDFium 级编辑（`ROADMAP.md`）。界面的样子、文件权限、业务数据、费用确认和记账都归 App；PDF.js 上的编辑逻辑归引擎（`decisions/0009`）。`AGENTS.md` 是本文件的软链接，Codex 读到的就是这一份（里面的「你」也指 Codex）。本地在 `~/Documents/GitHub/personal-engine-studio/engine-pdf`：引擎总仓库下的独立仓库（总仓库不收它）；挪过位置后先 `cargo clean -p engine-pdf`，测试里烤进去的绝对路径才会更新。
 
 ## 开工前
 

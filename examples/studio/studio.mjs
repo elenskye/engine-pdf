@@ -316,14 +316,17 @@ function showOutline(items = outline.items, parent = []) {
 }
 
 for (const action of ["add", "child", "rename", "remove", "up", "down", "promote", "indent"]) {
-  element(`outline-${action}`).onclick = () => {
+  element(`outline-${action}`).onclick = async () => {
     try {
       const title = element("outline-title").value.trim();
       const path = selectedOutline ?? [];
       const parent = path.slice(0, -1);
       const index = path.at(-1);
       if (["add", "child", "rename"].includes(action) && !title) throw new Error("请输入目录标题。");
-      const item = { title, target: { kind: "page", page: selectedPage + 1, y: 0 } };
+      // 目录指向所选页的顶端（PDF 坐标原点在左下，y 取裁切框上沿）。
+      const pick = organizer.pages[selectedPage];
+      const top = (await sources[pick.source].pdf.getPage(pick.page)).view[3];
+      const item = { title, target: { kind: "page", page: selectedPage + 1, y: top } };
       switch (action) {
         case "add": outline.insert([], item); break;
         case "child": outline.insert(path, item); break;

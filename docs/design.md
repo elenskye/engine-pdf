@@ -568,7 +568,7 @@ compose::assemble(parts: &[&[u8]], how: &Assembly, &Cancel) -> Result<Vec<u8>, E
 ### 8.2 接入
 
 - Rust 绑定用 `pdfium-render`；feature `pdfium` 默认关，只有要的 App 打开。`check.sh` 加一种开 `pdfium` 的配置。
-- 优先静态链进 App（自己编或用现成的 macOS arm64 静态库），做不到再随 App 带 `libpdfium.dylib`。Phase 1 量 App 二进制多大、编译多久、许可证（PDFium 和它带的 FreeType 等）再定。
+- 只用现成的预编译库，不从源码编（站主定，`decisions/0010`）。优先 macOS arm64 静态库链进 App，没有就随 App 带 `libpdfium.dylib`。Phase 1 量 App 二进制多大、链接多久、许可证（PDFium 和它带的 FreeType 等）再定。
 - PDFium 的 `unsafe` 在绑定里；引擎对外只露安全类型，和 PDFKit 一样不跨线程、每页查 `Cancel`。PDFium 文档对象只在 `edit::apply` 里短暂存在，改完交回字节再给 PDFKit。
 
 ### 8.3 可搜索扫描件
