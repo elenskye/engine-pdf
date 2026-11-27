@@ -1,6 +1,8 @@
 # HANDOFF
 
-更新于 2026-11-27。**v0.6.0 已发**（tag `v0.6.0`，待站主 push）。下一步：Peck 接引擎（v0.4.0 计划），或开 v0.7.0 接 Pomelo（计划在 `ROADMAP.md`，等批）。
+更新于 2026-11-27。**v0.6.0 已发**（tag `v0.6.0`，待站主 push）。
+
+下一步：引擎总仓库 2026-11-27 定了新顺序（`personal-engine-studio/docs/decisions/0003`、`0004`、`0007`）——v0.7 改为智能体工具包 + 统一的 `find`，钉 engine-core 的 tag；接 Pomelo 顺延到 v0.8、接 Pith 到 v0.9。本仓库 `ROADMAP.md` 的版本表还没改，等站主转来的提示词再更新。Peck 接入（v0.4.0 计划）不受影响。
 
 ## 本轮（Claude 审核 v0.6.0）
 
