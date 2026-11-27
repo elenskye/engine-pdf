@@ -1,8 +1,8 @@
 # ROADMAP
 
-最新 tag 为 **v0.6.0**。Peck（现 1.2.1，还没接引擎）可按下面的计划接入，钉当时最新的 tag。后续顺序见 `decisions/0008`：v0.7 接 Pomelo，v0.8 接 Pith。
+最新 tag 为 **v0.6.0**。下一步 **v0.7.0 工具包 + `pdf_find`**（`decisions/0020`），Phase 计划已写，等站主看过；依赖 engine-core 的部分等它发 `v0.2.0`。之后 v0.8 接 Pomelo、v0.9 接 Pith。Peck（现 1.2.1，还没接引擎）建议等 v0.7 后照工具包接。
 
-分工见 `docs/decisions/0001`：Codex 实施每个 Phase，Claude 审核、commit、打 tag。1.0.0 = 引擎完成（含 v0.5、v0.6 的能力）+ 三个 App 都接上并通过验收。
+分工见 `docs/decisions/0001`：Codex 实施每个 Phase，Claude 审核、commit、打 tag。1.0.0 = 引擎完成（含 v0.5–v0.7 的能力）+ 三个 App 都接上并通过验收；engine-core 1.0 同时冻结。
 
 ## 版本表
 
@@ -14,8 +14,9 @@
 | v0.4.0 | 接 Peck（brief 的首轮验收在这一版） | Peck 为主，引擎补接口 | 引擎改动已发（tag `v0.4.0`）；Peck 还没接，可以开工 |
 | v0.5.0 | 页面与结构 + 预览级编辑：目录书签、页标签核对、页面管理、照片打包、拼 PDF、标注、表单、密码、PDF.js 编辑套件、试用页 | engine-pdf | 完成（tag `v0.5.2`） |
 | v0.6.0 | PDFium 级：可搜索扫描件、移动与删除文字图片、涂黑 | engine-pdf | 完成（tag `v0.6.0`） |
-| v0.7.0 | 接 Pomelo（Pomelo 1.1.0）：换掉 Pomelo 的 PDF 代码、扫描件进知识库、检索带页图、Pub2MD、见字如面拼 PDF | Pomelo 为主，引擎补接口 | 计划已写，等批 |
-| v0.8.0 | 接 Pith：取字、Mathpix、页标签、编辑套件进阅读器 | Pith 为主 | 大纲 |
+| v0.7.0 | Agent 工具包（清单、调用入口、命令行、接线说明）+ `pdf_find`，钉 engine-core；人用的查找改走 find | engine-pdf | 计划已写，等批 |
+| v0.8.0 | 接 Pomelo（Pomelo 1.1.0）：换掉 Pomelo 的 PDF 代码、扫描件进知识库、检索带页图、Pub2MD、见字如面拼 PDF | Pomelo 为主，引擎补接口 | 计划已写，等批（原 v0.7） |
+| v0.9.0 | 接 Pith：取字、Mathpix、页标签、编辑套件进阅读器 | Pith 为主 | 大纲（原 v0.8） |
 | v1.0.0 | 完成体：冻结接口（Rust 和 `web/`），三个 App 钉 v1.0.0，全量回归 | 全部 | 大纲 |
 
 每一版都是「新增功能」：分 Phase，只在最后一个 Phase 收尾时打 tag（`CLAUDE.md`「版本」）。App 那边每次接入是它自己的一个版本，程度到时问站主（Pomelo 已定 1.1.0）。引擎为接入补的改动跟着当期版本发。v0.4.0 已先发，v0.5 可以开工；Peck 接入不再挡引擎的版本。
@@ -29,6 +30,8 @@
 5 个 Phase：Vision 单页识别 → 阅读顺序接进 `read` → Mathpix 客户端 → 页码映射 → 收尾。Codex 实施（含一次单页 Mathpix 真跑），Claude 审核时改了：OCR 阅读顺序改成递归切块，四栏杂志页不再串栏；仿扫描件工具从 Swift 脚本改成 `samples::scan` + `examples/make_scan`；Mathpix 响应加 1 GB 上限；`mathpix` 的流程拆到 `mathpix/job.rs`；又真跑了一次三页（空白、中文扫描、公式表格）验证映射。实测结论见 design §6。
 
 ## v0.4.0 接 Peck（计划）
+
+> 2026-11-27：建议等 v0.7 工具包发了再接，下面第 3、4 步改成照工具包接（`pdf_read`、`pdf_mathpix_*`），程度和额度不变。
 
 站主定的（2026-11-25 ASK）：
 
@@ -73,19 +76,31 @@
 - **可搜索副本**：换页序、合并后识别文字跟着页走。
 - 试用页去掉没有作用的「对象编辑会话」：对象编号只由文件内容决定。
 
-## v0.7.0 接 Pomelo（计划）
+## v0.7.0 Agent 工具包 + pdf_find（计划，等批）
+
+依据 `decisions/0020`、`CLAUDE.md`「一」（总仓库 `GUIDE.md`、`docs/decisions/0003`、`0004`）。engine-core 在 `../engine-core`，Phase 2 起钉它的 `v0.2.0`；它没发之前只做 Phase 1。
+
+| Phase | 做什么 | 做完的样子 |
+| --- | --- | --- |
+| 1 工具清单草案 + 字框实验 | design §9 写工具清单草案，覆盖现有每项能力：`pdf_info`、`pdf_read`（文字 + 页图附件 + 可选 OCR）、`pdf_render`、`pdf_ocr`、`pdf_mathpix_quote` / `pdf_mathpix`（每次确认）、`pdf_outline`、`pdf_annotations`、`pdf_fields`、`pdf_objects`、`pdf_edit`（改动单）、`pdf_redact`（单列，每次确认）、`pdf_searchable`、`pdf_compose_images`、`pdf_assemble`、`pdf_split`、`pdf_find`。每个写参数（JSON Schema、默认值、上限）、结果（Markdown 在前、结构化随附、长了怎么接着取）、出错（中文、下一步、能否重试）、费用、确认、影响（只读 / 交回新字节）、例子。实验：文字层页的字和字框怎么取（PDFKit 字框下标和文字串对不上，`0019` 审核记录；比 PDFKit 选区和 PDFium，后者要不要从可选变成默认）；扫描页用存下的识别结果还是现做 OCR | 站主看过清单草案；字框取法定下来写进 `decisions` |
+| 2 接 engine-core | `Cargo.toml` 钉 engine-core `v0.2.0`；`Cancel`、错误和费用约定换成它的类型，engine-pdf 再导出，对外接口不变（现有测试照过）；`Error` 映射到它的错误种类（中文、下一步、能否重试） | App 原来的调用不用改；`check.sh` 三种配置过 |
+| 3 调用入口 + 命令行 | `src/tools/`：按草案落成清单，`tools::manifest()`、`tools::call(名字, 参数, 上下文)`；页图作附件；`src/bin/engine-pdf`：`tools`、`describe`、`call`，Mathpix 不加 `--yes` 只报价；每个工具的例子跑成测试；`docs/toolkit.md`（App 交什么、能覆盖什么、三家怎么接） | 终端里能跑通每个免费工具；Mathpix 只报价不发请求（模拟服务测）；覆盖（改说明、收紧上限、关掉、改确认）有测试 |
+| 4 pdf_find | 按 engine-core 的 `Query`、`Hit`、`Found`：位置 = 物理页码 + 页标签 + 命中处的框；整句 → 按词（同一页）；扫描页来源标 OCR；上限和 `truncated`；归一化全用 engine-core | 样本和真实论文（知网、连字、断词、全角、简繁、扫描页）都找得到，框落在原字上（独立用 pypdfium2 核对） |
+| 5 套件查找改走 find + 收尾 | `web/` 的查找条改调 find（App 交结果，套件按框高亮、跳页）；试用页接上；README、design、CHANGELOG、HANDOFF；真实论文批量核对 | `check.sh` 过；试用页里搜中英文和扫描页都对；打 tag `v0.7.0` |
+
+## v0.8.0 接 Pomelo（计划，原 v0.7）
 
 依据 `docs/brief-pomelo.md`（目标、去向表、要换的约 23 处调用、要注意的事都在那里）。Pomelo 的改动在 Pomelo 仓库照 Pomelo 的 `CLAUDE.md` 做（版本三处一起改、提交、正式版、数据规则）；开工时 Pomelo 的会话把下面的 Phase 抄进 Pomelo 的 `docs/roadmap.md`。
 
 站主定的（2026-11-25 ASK）：
 
-- **Pomelo 1.1.0，分 Phase**，只在最后一轮装正式版。排在 v0.7（brief 原写 v0.6，`decisions/0008`）。
+- **Pomelo 1.1.0，分 Phase**，只在最后一轮装正式版。排在 v0.8（brief 原写 v0.6，`decisions/0008`、`0020`）。Pomelo 照工具包接。
 - **扫描件默认在本机识别，库里已有的扫描件升级后也自动补**：后台一份一份做。
 - **检索命中 PDF（含扫描件）的段落就带那一页的页图**，给能看图的云端模型；「发给云端」关掉的来源、本地模型、原文件找不到或改过的只给文字；`view=look` 照旧。
 
 brief 留给计划定的（Claude 定）：Mathpix 转 Word、LaTeX 搬进引擎（`mathpix::convert`，`decisions/0011`）；页图不缓存、不存盘（现画一页约 40 ms）；照片打包、拼 PDF 的接口是 design §7.4（v0.5 已做好）；各处怎么核对写在下表。
 
-引擎这边要补的：`mathpix::convert`（`fake` 里也能模拟）；从旧任务接着跑的 `Submitted`（Pomelo 旧任务文件里存的是自己的 `pdf_id`，上传的是整份）。Pomelo 先钉当时最新的 tag，收尾改钉 `v0.7.0`。
+引擎这边要补的：`mathpix::convert`（`fake` 里也能模拟）；从旧任务接着跑的 `Submitted`（Pomelo 旧任务文件里存的是自己的 `pdf_id`，上传的是整份）。Pomelo 先钉当时最新的 tag，收尾改钉 `v0.8.0`。
 
 | Phase（Pomelo 1.1.0） | 做什么 | 做完的样子 |
 | --- | --- | --- |
@@ -93,11 +108,11 @@ brief 留给计划定的（Claude 定）：Mathpix 转 Word、LaTeX 搬进引擎
 | 2 扫描件进知识库 | `files::prepare` 走 `read(Ocr::auto(), render: None)`；后台队列一次一份、一页一页，来源那一行显示「识别中 第 12/300 页」、能停、重开 App 后接着做；升级后把已有的扫描件排进队列；第一次加载识别模型（16–33 s）显示「准备识别」；识别的段落标「本机识别」，给模型时说可能有错字。分段怎么存照 Pomelo 现有的知识库，动到数据结构先写进计划给站主看 | 扫描 PDF 能搜到、引用带页码；断网能建；文字 PDF 建索引的速度不变 |
 | 3 检索带页图 | 命中 PDF 段落时现画那一页（1568px JPEG）随段落给能看图的云端模型，一次最多 6 段（约多 9 千 tokens）；不给图的三种情况照上面 | 测试：三种情况都不发图；发图时页码对 |
 | 4 Pub2MD | 原页图改 `read_each` 逐页画、逐页存、能取消；Mathpix 换成 `submit`（`Submitted` 存进任务文件）、`wait`、`fetch`、`delete`，Word 走 `submit_file`，转 Word、LaTeX 走 `mathpix::convert`；模拟模式换 `FakeTransport::echo()`；删掉 `pub2md/mathpix.rs`；旧任务文件升级后照样续跑 | 模拟服务跑完照片、PDF、Word 三种；中途退出再继续不重复上传（请求记录里没有第二次上传）；旧版留下的半截任务夹具能续跑 |
-| 5 收尾 | 钉 `v0.7.0`；brief 的验收场景；升级测试后装正式版；两边的文档和 HANDOFF；真跑 Mathpix（含一次转换）在每版 $1 内 | 验收场景都过；打 tag `v0.7.0` |
+| 5 收尾 | 钉 `v0.8.0`；brief 的验收场景；升级测试后装正式版；两边的文档和 HANDOFF；真跑 Mathpix（含一次转换）在每版 $1 内 | 验收场景都过；打 tag `v0.8.0` |
 
 ## 之后的版本（大纲，开工前细化成 Phase 表、站主看过再做）
 
-- **v0.8.0 接 Pith**：论文后台取字（`research/content.rs`）→ Mathpix（`concept/mathpix.rs`）→ 页数与本机取字 → 页标签在阅读器里端到端核对（v0.5 已对过样本）→ 编辑套件进阅读器（写进原文件还是另存、和库里 Zotero 格式的标注怎么并存，开工前问站主）→ 删 `pdf-extract`、发版。Pith 的「PDF 目录和缩略图」候选可以直接用 `outline` 和套件的 `organizer`。
+- **v0.9.0 接 Pith**（原 v0.8，照工具包接）：论文后台取字（`research/content.rs`）→ Mathpix（`concept/mathpix.rs`）→ 页数与本机取字 → 页标签在阅读器里端到端核对（v0.5 已对过样本）→ 编辑套件进阅读器（写进原文件还是另存、和库里 Zotero 格式的标注怎么并存，开工前问站主）→ 删 `pdf-extract`、发版。Pith 的「PDF 目录和缩略图」候选可以直接用 `outline` 和套件的 `organizer`。
 - **v1.0.0 完成体**：公共接口（Rust 和 `web/`）审一遍、冻结；三个 App 钉 `v1.0.0` 回归；文档定稿；确认三边没有残留的重复 PDF 实现。
 
 ## 用户验收清单
@@ -109,5 +124,6 @@ brief 留给计划定的（Claude 定）：Mathpix 转 Word、LaTeX 搬进引擎
 - [x] v0.5.0 页面和目录（2026-11-26 Claude 代验；修了试用页新目录项指向页底）。在试用页删一页、转一页、把另一份 PDF 插到中间，添加一项目录。用「预览」核对页序、旋转、目录及内部链接。
 - [x] v0.5.0 表单和密码（2026-11-26：Claude 验填值、「预览」要密码、去密码和烧平；站主在 Chrome 输密码后四个值都对。Edge 新版阅读器不显示加密表单的控件，是 Edge 的限制，站主定不处理）。
 - [x] v0.6.0（2026-11-27 Claude 代验）：试用页里拖动、删除、涂黑一篇真实论文，把中文扫描件转成可搜索副本；「预览」里搜得到扫描页的字、高亮落在原字上；全选复制涂黑副本，剪贴板里没有框里的字。
-- [ ] v0.7.0：Pomelo 正式版里 ① 扫描 PDF 进知识库后能搜到、引用带页码 ② 柚子引用 PDF 段落时云端模型能说出那一页图表的内容 ③ Pub2MD 原页图和以前看起来一样（知网文件边缘少一截除外）④ 见字如面导出的 PDF 链接、目录、标题都在。
-- [ ] v0.8.0：Pith 里一条来自扫描论文的引用，点回去落在阅读器的同一页。
+- [ ] v0.7.0：在终端跑 `engine-pdf tools` 和几个 `call`（读一页、找一句中文、找扫描页上的字），看说明和结果读起来顺不顺；Mathpix 不加 `--yes` 只报价。在试用页查找条里搜，高亮落在对的字上。
+- [ ] v0.8.0：Pomelo 正式版里 ① 扫描 PDF 进知识库后能搜到、引用带页码 ② 柚子引用 PDF 段落时云端模型能说出那一页图表的内容 ③ Pub2MD 原页图和以前看起来一样（知网文件边缘少一截除外）④ 见字如面导出的 PDF 链接、目录、标题都在。
+- [ ] v0.9.0：Pith 里一条来自扫描论文的引用，点回去落在阅读器的同一页。

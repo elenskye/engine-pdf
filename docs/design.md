@@ -269,7 +269,7 @@ App 照旧记进自己的账本：Peck 记成 `Fee::Ocr`，Pith 交给 `meter.re
 4. **下载**：`.mmd` 必取。按提交时设置下载 `.lines.json`、`.mmd.zip`。行数据缺失时按可用结果映射。ZIP 返回 202 时按 `Retry-After` 或轮询间隔重试，等待可取消、有上限。见 [Mathpix PDF 接口文档](https://docs.mathpix.com/reference/post-v3-pdf)。
 5. **删除**：不管成败，只要拿到过 `pdf_id` 就 `DELETE /v3/pdf/{id}`，结果写进 `usage.remote_deleted`。
 
-`/v3/converter`（Pomelo 把 mmd 转 docx 等）v0.7.0 搬进引擎，作 `mathpix::convert`（`decisions/0011`）。
+`/v3/converter`（Pomelo 把 mmd 转 docx 等）v0.8.0 搬进引擎，作 `mathpix::convert`（`decisions/0011`）。
 
 ### 3.4 原页码映射
 
@@ -353,7 +353,7 @@ Pomelo 上传 Word 用 `mathpix::submit_file(bytes, mime, estimated_pages, &keys
 
 页码：引擎的 `index` = PDF.js 的 `pageIndex + 1`，`label` 应等于 PDF.js 的页标签；Pith 存 `index`、显示 `label`，引用就能跳回阅读器的那一页。核对：带罗马数字前言的样本，引擎和 PDF.js 逐页比标签。旧行为核对：拿 Pith 现有的夹具（`research/fixtures.rs` 的 `survey_pdf`、`scanned_pdf`）和样本，比 `pdf-extract` 和引擎的结果——这里**预期会不一样**（换了底层），比的是「没有缺字」「两栏顺序对」，不是逐字相等。替换掉的：`pdf-extract` 依赖（`THIRD_PARTY.md` 删一行）和 Pith 的 Mathpix HTTP 代码。已经存进库的正文不自动重取。
 
-### 4.3 Pomelo（v0.7.0，Phase 计划见 `ROADMAP.md`）
+### 4.3 Pomelo（v0.8.0，Phase 计划见 `ROADMAP.md`）
 
 | 入口 | 现在 | 换成 |
 | --- | --- | --- |
@@ -619,3 +619,9 @@ doc.objects(8)?;   // Vec<PageObject>，需启用 "pdfium"
 - `Plan.redact` 收 `{ page, rects }`，框在原物理页的 CropBox 里。执行顺序、整页后备、共享图像和验证条件见 `decisions/0018`。
 - Web 用 `select("redact")` 画草稿框（`pendingRedactions`），App 用 `confirmRedactions(approve)` 说明范围、取得确认，保存时合并 `EditorTools.redact`。撤销确认时框回到草稿。
 - 关掉 `pdfium` 时，带对象编辑或涂黑的改动单返回 `Error::PdfiumUnavailable`。
+
+---
+
+## 9. Agent 工具包和 pdf_find（v0.7.0，计划）
+
+工具清单草案在 v0.7 Phase 1 写进本节（`ROADMAP.md`、`decisions/0020`）：每个工具的参数、结果、出错、费用、确认、影响和例子先于实现，站主看过再落代码。

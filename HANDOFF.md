@@ -2,7 +2,7 @@
 
 更新于 2026-11-27。**v0.6.0 已发**（tag `v0.6.0`，待站主 push）。
 
-下一步：引擎总仓库 2026-11-27 定了新顺序（`personal-engine-studio/docs/decisions/0003`、`0004`、`0007`）——v0.7 改为智能体工具包 + 统一的 `find`，钉 engine-core 的 tag；接 Pomelo 顺延到 v0.8、接 Pith 到 v0.9。本仓库 `ROADMAP.md` 的版本表还没改，等站主转来的提示词再更新。Peck 接入（v0.4.0 计划）不受影响。
+下一步：**v0.7.0 工具包 + `pdf_find`**，Phase 计划已写进 `ROADMAP.md`，等站主看过（`decisions/0020`）。Phase 1（工具清单草案、字框取法实验）可以先做；Phase 2 起要钉 engine-core `v0.2.0`（`../engine-core`，它的 v0.2.0 计划也在等批）。`CLAUDE.md` 已照抄总仓库 `GUIDE.md`「一」到「五」。接 Pomelo 改为 v0.8、接 Pith 改为 v0.9；Peck 建议等 v0.7 后照工具包接。
 
 ## 本轮（Claude 审核 v0.6.0）
 
