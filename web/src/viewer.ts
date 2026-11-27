@@ -3,10 +3,10 @@ import {
   GlobalWorkerOptions, getDocument, type AnnotationEditorUIManager,
   type PDFDocumentLoadingTask, type PDFDocumentProxy, type PDFPageProxy,
 } from "pdfjs-dist";
-import { EventBus, PDFFindController, PDFLinkService, PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
+import { EventBus, PDFLinkService, PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
 import { captureEditors } from "./capture.js";
 import { captureFields } from "./forms.js";
-import type { Field, Plan, Point, ReadAnnotation } from "./plan.js";
+import type { Field, Plan, Point, ReadAnnotation, Rect } from "./plan.js";
 
 export interface ViewerAssets {
   worker: string;
@@ -21,10 +21,31 @@ export interface ViewerOptions {
   viewer: HTMLDivElement;
   assets: ViewerAssets;
   annotations?: (page: number) => Promise<readonly ReadAnnotation[]> | readonly ReadAnnotation[];
+  search?: (query: string, signal: AbortSignal) => Promise<FindResult> | FindResult;
   onPage?: (number: number, label: string | null) => void;
   onScale?: (scale: number) => void;
-  onFind?: (current: number, total: number) => void;
+  onFind?: (current: number, total: number, state: FindState) => void;
   onChange?: () => void;
+}
+
+export interface FindHit {
+  location: { page: number; label?: string; rects: readonly Rect[] };
+  before: string;
+  matched: string;
+  after: string;
+  how: "phrase" | "words";
+  source: "text" | "ocr";
+}
+
+export interface FindResult {
+  hits: readonly FindHit[];
+  total: number;
+  truncated: boolean;
+}
+
+export interface FindState {
+  pending: boolean;
+  result: FindResult | null;
 }
 
 export type NativeTool = "select" | "highlight" | "textBox" | "ink" | "image" | "signature";
@@ -66,6 +87,12 @@ export class EditorViewer {
   #labels: string[] | null = null;
   #signature: { input: SignatureInput; resolve: () => void; reject: (error: unknown) => void } | null = null;
   #originals = new Map<number, Promise<ReadonlyMap<string, ReadAnnotation>>>();
+  #findRequest: AbortController | null = null;
+  #findQuery = "";
+  #findResult: FindResult | null = null;
+  #findIndex = -1;
+  #findScrollPage: number | null = null;
+  #findLayers = new Map<number, HTMLDivElement>();
 
   constructor(options: ViewerOptions) {
     this.container = options.container;
@@ -74,7 +101,6 @@ export class EditorViewer {
     this.container.setAttribute("lang", "");
     this.#link = new PDFLinkService({ eventBus: this.events });
     this.#link.externalLinkEnabled = false;
-    const finder = new PDFFindController({ eventBus: this.events, linkService: this.#link });
     const signatureManager = {
       loadSignatures() {},
       destroy() {},
@@ -83,7 +109,7 @@ export class EditorViewer {
     };
     const viewerOptions = {
       container: this.container, viewer: options.viewer, eventBus: this.events,
-      linkService: this.#link, findController: finder, annotationMode: AnnotationMode.ENABLE_FORMS,
+      linkService: this.#link, annotationMode: AnnotationMode.ENABLE_FORMS,
       annotationEditorMode: Mode.NONE, imageResourcesPath: options.assets.images,
       annotationEditorHighlightColors: "yellow=#FFFF98,green=#53FFBC,blue=#80EBFF,pink=#FFCBE6,red=#FF4F5F",
       enableHighlightFloatingButton: false, signatureManager,
@@ -110,9 +136,12 @@ export class EditorViewer {
       options.onPage?.(pageNumber, this.label(pageNumber));
     }, { signal });
     this.events.on("scalechanging", ({ scale }: { scale: number }) => options.onScale?.(scale), { signal });
-    for (const name of ["updatefindmatchescount", "updatefindcontrolstate"]) {
-      this.events.on(name, ({ matchesCount }: { matchesCount?: { current: number; total: number } }) =>
-        options.onFind?.(matchesCount?.current ?? 0, matchesCount?.total ?? 0), { signal });
+    for (const name of ["pagerender", "pagerendered"]) {
+      this.events.on(name, ({ pageNumber }: { pageNumber: number }) => {
+        if (!this.#findResult?.hits.length) return;
+        this.#drawFindPage(pageNumber);
+        if (this.#findScrollPage === pageNumber) this.#scrollToFind();
+      }, { signal });
     }
     this.events.on("annotationeditorstateschanged", () => options.onChange?.(), { signal });
     this.container.addEventListener("input", () => options.onChange?.(), { signal });
@@ -146,17 +175,143 @@ export class EditorViewer {
   pageView(page: number): PageView | undefined { return this.#viewer.getPageView(page - 1) as PageView | undefined; }
   goToPage(page: number): void {
     if (!Number.isInteger(page) || page < 1 || page > (this.#pdf?.numPages ?? 0)) throw new RangeError("页码越界。");
+    this.#findScrollPage = null;
     this.#viewer.currentPageNumber = page;
   }
   zoom(scale: number | "page-fit" | "page-width"): void { this.#viewer.currentScaleValue = String(scale); }
   zoomBy(steps: number): void { this.#viewer.updateScale({ steps }); }
 
-  find(query: string, direction: "new" | "next" | "previous" = "new"): void {
-    this.events.dispatch("find", {
-      source: this, type: direction === "new" ? "" : "again", query,
-      caseSensitive: false, entireWord: false, highlightAll: true,
-      findPrevious: direction === "previous", matchDiacritics: false,
+  async find(query: string, direction: "new" | "next" | "previous" = "new"): Promise<void> {
+    query = query.trim();
+    const search = this.#options.search;
+    if (!query || !this.#pdf || !search) {
+      this.#clearFind();
+      this.#notifyFind();
+      return;
+    }
+    if (query === this.#findQuery) {
+      if (this.#findRequest) return;
+      if (this.#findResult) {
+        const count = this.#findResult.hits.length;
+        if (count) {
+          const step = direction === "previous" ? -1 : 1;
+          this.#selectFind(direction === "new" ? 0 : (this.#findIndex + step + count) % count);
+          this.#notifyFind();
+        }
+        return;
+      }
+    }
+
+    this.#clearFind();
+    this.#findQuery = query;
+    const request = new AbortController();
+    this.#findRequest = request;
+    this.#notifyFind();
+    try {
+      const result = await search(query, request.signal);
+      if (request !== this.#findRequest) return;
+      this.#findResult = result;
+      if (result.hits.length) {
+        const firstPage = result.hits[0].location.page;
+        this.#selectFind(0);
+        for (const page of new Set(result.hits.map(hit => hit.location.page))) {
+          if (page !== firstPage) this.#drawFindPage(page);
+        }
+      }
+    } catch (error) {
+      if (!request.signal.aborted) {
+        this.#clearFind();
+        this.#notifyFind();
+        throw error;
+      }
+    } finally {
+      if (request === this.#findRequest) {
+        this.#findRequest = null;
+        this.#notifyFind();
+      }
+    }
+  }
+
+  #clearFind(): void {
+    this.#findRequest?.abort();
+    this.#findRequest = null;
+    this.#findQuery = "";
+    this.#findResult = null;
+    this.#findIndex = -1;
+    this.#findScrollPage = null;
+    for (const layer of this.#findLayers.values()) layer.remove();
+    this.#findLayers.clear();
+  }
+
+  #notifyFind(): void {
+    this.#options.onFind?.(this.#findIndex + 1, this.#findResult?.total ?? 0, {
+      pending: this.#findRequest !== null, result: this.#findResult,
     });
+  }
+
+  #selectFind(index: number): void {
+    const hits = this.#findResult!.hits;
+    const previous = hits[this.#findIndex]?.location.page;
+    const page = hits[index].location.page;
+    this.#findIndex = index;
+    if (previous !== undefined && previous !== page) this.#drawFindPage(previous);
+    this.#drawFindPage(page);
+    this.#findScrollPage = page;
+    this.#scrollToFind();
+  }
+
+  #scrollToFind(): void {
+    const hit = this.#findResult?.hits[this.#findIndex];
+    if (!hit) return;
+    const { page, rects } = hit.location;
+    const rect = rects[0];
+    if (rect && !this.#viewer.getPageView(page - 1)?.pdfPage) {
+      this.#viewer.scrollPageIntoView({ pageNumber: page });
+      return;
+    }
+    this.#findScrollPage = null;
+    this.#viewer.scrollPageIntoView({
+      pageNumber: page, ignoreDestinationZoom: true, center: "both",
+      destArray: rect ? [null, { name: "XYZ" }, rect.x + rect.width / 2, rect.y + rect.height / 2, null] : undefined,
+    });
+  }
+
+  #drawFindPage(page: number): void {
+    const view = this.#viewer.getPageView(page - 1);
+    const previous = this.#findLayers.get(page);
+    previous?.remove();
+    this.#findLayers.delete(page);
+    if (!view?.pdfPage || !view.div.querySelector(".canvasWrapper")) return;
+    const hits = this.#findResult?.hits ?? [];
+    if (!hits.some(hit => hit.location.page === page && hit.location.rects.length)) return;
+    const doc = view.div.ownerDocument;
+    const layer = doc.createElement("div");
+    layer.className = "engine-pdf-find-layer";
+    layer.setAttribute("aria-hidden", "true");
+    Object.assign(layer.style, { position: "absolute", inset: "0", pointerEvents: "none", overflow: "hidden", zIndex: "4" });
+    const { viewport } = view;
+    hits.forEach(({ location }, index) => {
+      if (location.page !== page) return;
+      for (const { x, y, width, height } of location.rects) {
+        const [left, top] = viewport.convertToViewportPoint(x, y);
+        const [right, bottom] = viewport.convertToViewportPoint(x + width, y + height);
+        const rect = doc.createElement("span");
+        rect.className = "engine-pdf-find-match";
+        rect.dataset.current = String(index === this.#findIndex);
+        Object.assign(rect.style, {
+          position: "absolute",
+          left: `${100 * Math.min(left, right) / viewport.width}%`,
+          top: `${100 * Math.min(top, bottom) / viewport.height}%`,
+          width: `${100 * Math.abs(right - left) / viewport.width}%`,
+          height: `${100 * Math.abs(bottom - top) / viewport.height}%`,
+        });
+        layer.append(rect);
+      }
+    });
+    if (layer.childElementCount) {
+      view.div.append(layer);
+      this.#findLayers.set(page, layer);
+    }
   }
 
   async open(bytes: Uint8Array, password?: string): Promise<PDFDocumentProxy> {
@@ -207,6 +362,8 @@ export class EditorViewer {
   }
 
   #reset(): void {
+    this.#clearFind();
+    this.#notifyFind();
     this.#native = null;
     this.#editorReady = false;
     this.#pendingStyle = null;

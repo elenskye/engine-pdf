@@ -1,35 +1,49 @@
 # HANDOFF
 
-更新于 2026-11-27。**v0.6.0 已发**（tag `v0.6.0`，待站主 push）。
+更新于 2026-11-27。**v0.7.0 已审核、提交，还没打 tag**：它钉的 engine-core v0.2.1（本轮修的）还没推上 GitHub，开发期用 `[patch]` 指本机路径。最新已发 tag 仍是 `v0.6.0`。
 
-下一步：**v0.7.0 工具包 + `pdf_find`**，Phase 计划已写进 `ROADMAP.md`，等站主看过（`decisions/0020`）。Phase 1（工具清单草案、字框取法实验）可以先做；Phase 2 起要钉 engine-core `v0.2.0`（`../engine-core`，它的 v0.2.0 计划也在等批）。`CLAUDE.md` 已照抄总仓库 `GUIDE.md`「一」到「五」。接 Pomelo 改为 v0.8、接 Pith 改为 v0.9；Peck 建议等 v0.7 后照工具包接。
+## 本轮：本机 Claude 审核 Codex 的 v0.7.0
 
-> 准则更新（2026-11-27）：`CLAUDE.md`「二」末尾加了「改用到的引擎」（总仓库 `docs/decisions/0009`）。用到别的引擎就能直接改它、照它的规矩提交和打 tag，动之前读它的 `CLAUDE.md`；改它已有的接口先问站主。
+Codex 实施了 Phase 1–5（工具清单、接 engine-core、调用入口和命令行、`pdf_find`、Web 查找）。架构照 GUIDE 搭得对：清单在 `tools/*.json`，`src/tools/` 只做参数转换和 Markdown，业务逻辑留在原模块；`find` 的归一化全在 engine-core。审核改了：
 
-## 本轮（Claude 审核 v0.6.0）
+- **扫描页带几个字也要识别**（`src/sys/find.rs`）：原来文字层有 1 个字就不做 OCR，扫描软件盖的页码、水印让整页找不到。改成和 `read` 同一门槛，分支理顺（design §9.2）；新测试 `recognizes_scans_that_carry_only_a_short_text_stamp`。
+- **engine-core v0.2.1**：软连字符后跟空格被当成行尾断词，`all­ observations`、`between-­ and` 拼成一个词，整句、按词都找不到（Duke 出版社期刊）。在 engine-core 修了、打了 tag。
+- **工具清单**：`pdf_edit` 的 `plan` 原来只写了类型，模型拼不出标注、填表、目录——补全每种字段，加一个高亮例子；两处 `id` 的说明错抄成「物理页码」；`pdf_find` 说明加上扫描件慢、先做可搜索副本。
+- **工具输出**：`pdf_read` 越界页直接报 `bad_args`（原来交回一页 failed、退出码 0）；`pdf_find` 的 Markdown 中文之间不再插空格、按词时说清是哪几页；`pdf_objects` 带上文字内容（模型才知道动哪个编号）；Mathpix 执行时单价和报价同一处取（原来从金额反推）。
+- **结构**：`find` 单列 `src/tools/find.rs`；`ToolError`、`Quote`、`Usage` 从根上挪到 `engine_pdf::tools`（根上的 `Quote` 和 `mathpix::Quote` 同名不同义）；`page()` 改名 `uint()`。
+- **试用页**：可设 `ENGINE_PDF_STUDIO_PORT` 固定端口。
+- **文档**：design §9、`docs/toolkit.md` 重写；ROADMAP 已完成的版本缩成一段；`decisions/0021` 补审核记录；CHANGELOG、README、THIRD_PARTY、CLAUDE.md 跟着改。
 
-Codex 实施了 Phase 1–5。审核时在 38 份真实论文和站主的扫描件上实测，发现 PDFium 整页重写会改坏页面别处，改了写法（`decisions/0019`）：
-
-- `src/sys/content.rs`（新）：数出每个页面对象由哪条指令画出、和 PDFium 清单对上，只改那几条指令（移动、删除、换图、盖黑框）。`src/sys/check.rs`（新）：改动区外的画面和字必须不变。`src/sys/tags.rs`（新）：涂黑页的结构树去掉替代文字。
-- `src/sys/pdfium.rs` 改成只读；`src/sys/redact.rs` 重写流程：先在原内容上涂，做不到或核对不过再整页位图；只沾框边的字、穿过框的线条不再触发位图；补回的搜索层按字切；位图黑白页存灰度；去掉页上的 `PieceInfo`。
-- `src/sys/write.rs`：换页序、合并时带上可搜索副本的识别文字。
-- 试用页去掉「对象编辑会话」（`examples/studio/main.rs`、`studio.mjs`）：对象编号只由文件内容决定。
-- 新增测试：`content`、`tags`、`redact` 的单元测试；`tests/object_edits.rs` 字距不被改、删接续字要字宽；`tests/redaction.rs` 带结构树的页原地涂黑；`tests/searchable.rs` 换页序后读回识别文字。
-- 文档：`decisions/0019`（新）、`0018`、`0010`，design §6–§8，README，ROADMAP（已完成版本压成一段），CHANGELOG，`CLAUDE.md` 的 PDFium 一条。
+Codex 留给审核的几件：Web 查找的异步和取消（在试用页里实测换查询、导航都对）；旧 OCR 框回退（读过，保留）；Mathpix 上传无任务 ID 记 $0（照 design §3.6 保留，每次重试仍要确认）；工具错误的重试提示（读过，合理）。
 
 ## 验证
 
-- `./scripts/check.sh` 通过：默认、`samples,fake`、`samples,fake,pdfium` 三种配置的测试和 Clippy，Web 类型检查和测试。付费 Mathpix 测试照旧忽略。
-- 真实论文检查程序在 `local/v060/review/v060_real.rs`（不进 Git；用时复制到 `examples/`，`--features samples,pdfium`）。结果见 design §6「对象编辑和涂黑」。
-- 试用页（开 `pdfium`）实操：Shore 2019 第 2 页拖一行、删一行、在句中涂黑；中文扫描件生成可搜索副本。输出在 `local/studio/`。
-- 「预览」原生窗口（Claude 临时接管屏幕）：可搜索副本搜「供應鏈效率」命中并高亮在原字上；涂黑副本全选复制，剪贴板里没有框里的字。
+- `./scripts/check.sh`：通过（三种配置的测试和 Clippy、Web 类型检查和测试），日志 `local/v070-review/check-after.log`。engine-core `./scripts/check.sh` 和 Linux `cargo check` 通过。
+- **命令行实跑**（release + pdfium）：17 个工具在真实论文、杂志、扫描件上各跑过：读、页图、OCR、目录、标注、表单、对象、找（中英文、跨行、按词、扫描页现做识别、可搜索副本里的识别层）、改（按 find 的框加高亮、移动对象、设密码）、涂黑（不加 `--yes` 只报确认，加了之后框里的字 PDFium 也取不到）、拆页、拼接、照片打包、Mathpix 报价（不加 `--yes` 退出码 3）、错误种类（坏文件、加密、密码错、越界、不是 PDF）。
+- **字框独立核对**：39 份真实 PDF 随机抽 110 个短语，PDFium 读框内文字比对，106 处通过；其余 4 处是抽样按 PDFium 的取字顺序拼了表格、参考文献（PDFKit 原文里本来就没有这句），没有真正漏找。脚本和日志在 `local/v070-review/`（README）。
+- **试用页**（内置浏览器）：繁体查简体原文、扫描页「quiet valley」标「本机识别」且高亮落在字上、按词查找、上一个/下一个循环都对。
+- **没做**：Mathpix 真跑（本版没改上传逻辑）；App 接入。
 
-## 已知限制
+## 已知问题
 
-- 字形压在框边、框碰到 Form 或斜放、带透明的图片时整页位图：画面变成图，框外的字靠 OCR 补回，紧贴框边的个别词可能补不回来。
-- 删除同一行中间的一段字要字宽表：标准 14 字体（没有 `/Widths`）、非 `Identity-H` 的 CID 字体、竖排会报 `ObjectNotEditable`；移动不受影响。
-- 页上有内联图片时这一页的对象编辑报 `ObjectEditFailed`（lopdf 解析不全），涂黑走整页位图。
-- Intel Mac 和 App 安装包没验。开 `pdfium` 的 App 分发时附 `THIRD_PARTY.md` 所列通知。
+- **PDFKit 丢 fi 连字**：部分期刊取字时 `fi` 变成 `f` 或空格（Phoenix 2024：PDFium 403 处、PDFKit 3 处；Arpino 2022：134→5），这些词 `read`、`find` 都对不上。v0.2 起就有，PDFium 取得对。
+- **个别中文字体的行框偏高**：李蓉蓉那篇行框 24.8 pt、行距 15 pt，高亮会罩到下一行（「预览」里选中也这样）。PDFKit 内收不紧，要用 PDFium 字形框。
+- **扫描件查找慢**：没有可搜索层的扫描页每次查找都现做 Vision（热启动约 0.5 秒一页，进程里第一次加载模型 16–50 秒），引擎不缓存；84 页文字杂志全书查一次约 3.4 秒（主要是 PDFKit 取字）。接 Pith 阅读器时考虑在 `Document` 里缓存每页文字和识别结果。
+
+## 等站主
+
+1. **先推 engine-core，再告诉我**：
+
+   ```bash
+   cd ~/Documents/GitHub/personal-engine-studio/engine-core && git push origin main --tags
+   ```
+
+   推上后下一轮：`Cargo.toml` 的 engine-core 改钉 `tag = "v0.2.1"`、删掉 `[patch]` 段，`cargo update -p engine-core`，`./scripts/check.sh`，提交，打 `v0.7.0`。之后再推 engine-pdf（`git push origin main --tags`）。
+2. **要不要改取字来源**（上面第一条已知问题）：开了 `pdfium` 时 `read`、`find` 改用 PDFium 取字，或检测到连字丢失时才换。会改变三个 App 已有的取字结果，所以等你定；建议放进 v0.8 前做一个小版本。
+
+## 下一步
+
+engine-core 推上后照「等站主」第 1 条收尾、打 `v0.7.0`。然后 v0.8 接 Pomelo（计划在 ROADMAP，等批），Peck 照工具包接（ROADMAP v0.4）。
 
 ## Mathpix 真跑
 

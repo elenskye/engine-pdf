@@ -46,7 +46,7 @@ pub struct OcrText {
 }
 
 /// Vision 返回的一行文字。
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub struct OcrLine {
     pub text: String,
     /// Vision 返回的置信度，范围 0–1。
@@ -55,7 +55,7 @@ pub struct OcrLine {
 }
 
 /// 原 PDF 的页面坐标，左下原点，单位 pt，包含 CropBox 的偏移。
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct OcrBounds {
     pub x: f64,
     pub y: f64,

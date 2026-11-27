@@ -1,0 +1,36 @@
+{
+  "name": "pdf_split",
+  "title": "提取 PDF 页面",
+  "description": "按给定顺序复制物理页到新 PDF，允许重复。任意一页越界时报告错误并停止。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "file": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"},
+      "pages": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"}, "maxItems": 500, "description": "依次复制这些物理页。"}
+    },
+    "required": ["file", "pages"]
+  },
+  "result": "Markdown 给出输出摘要，data 列页数和附件名，PDF 字节作附件。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "page_count": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+      "attachment": {"type": "string"}
+    },
+    "required": ["page_count", "attachment"]
+  },
+  "errors": [
+    {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},
+    {"kind": "damaged_pdf", "message": "这份 PDF 已损坏，打不开。", "hint": "请用原始文件或重新导出 PDF。", "retry": false},
+    {"kind": "locked", "message": "这份 PDF 加了密码，打不开。", "hint": "请让用户提供 PDF 的打开密码。", "retry": false},
+    {"kind": "wrong_password", "message": "PDF 密码不正确。", "hint": "请让用户重新提供 PDF 密码。", "retry": false},
+    {"kind": "save_failed", "message": "PDF 保存失败。", "hint": "请缩小改动范围，或换一份 PDF 重新操作。", "retry": false}
+  ],
+  "cost": {"kind": "local"},
+  "confirm": {"kind": "never"},
+  "effects": {"network": false, "writes": "new_bytes"},
+  "examples": [
+    {"args": {"file": "samples/out/mixed.pdf", "pages": [8, 1, 8]}, "expect": {"data": {"page_count": 3}}},
+    {"args": {"file": "samples/out/mixed.pdf", "pages": [11]}, "expect": {"error": "bad_args"}}
+  ]
+}

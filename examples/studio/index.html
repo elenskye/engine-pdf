@@ -120,8 +120,9 @@
         <button id="next-page" aria-label="下一页">›</button>
         <button id="zoom-out" aria-label="缩小">−</button><button id="zoom-in" aria-label="放大">＋</button>
         <button id="fit-width">适合宽度</button><output id="scale"></output>
-        <label>查找 <input id="search" type="search"></label>
-        <button id="find-previous">上一个</button><button id="find-next">下一个</button><output id="find-count"></output>
+        <input id="search" type="search" aria-label="查找 PDF 文字" placeholder="查找文字">
+        <button id="find-submit" disabled>查找</button>
+        <button id="find-previous" disabled>上一个</button><button id="find-next" disabled>下一个</button><output id="find-count" aria-live="polite"></output>
       </div>
       <div class="viewport">
         <div id="empty">打开 PDF 开始编辑</div>

@@ -2,6 +2,8 @@
 
 引入依赖时在这里登记一行（`CLAUDE.md`「工程约定」）。
 
+共用引擎 [engine-core](https://github.com/elenskye/engine-core) 钉 `v0.2.1`（工具包骨架、find 归一化、取消），它的依赖见它自己的 `THIRD_PARTY.md`。
+
 | 名称 | 版本 | 许可证 | 用途 | 链接 |
 | --- | --- | --- | --- | --- |
 | `lopdf` | `^0.42.0` | MIT | 写出改动（在原文件对象上改、拼页）、读写表单、烧平外观层、读写 PDF 加密权限 | [crate](https://crates.io/crates/lopdf) |

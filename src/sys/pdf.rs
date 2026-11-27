@@ -116,6 +116,10 @@ impl Pdf {
         &self.document
     }
 
+    pub(super) fn has_labels(&self) -> bool {
+        self.has_labels
+    }
+
     pub(super) fn has_form(&self) -> bool {
         self.has_form
     }
@@ -157,23 +161,7 @@ impl Pdf {
     pub(crate) fn page(&self, page: u32) -> Result<(Option<String>, String, bool), Error> {
         self.with_page(page, |page| {
             let label = if self.has_labels { label(page) } else { None };
-            // SAFETY: 字典和流都属于当前页的 CoreGraphics 对象，在取出流数据前保持存活。
-            let embedded = unsafe {
-                page.pageRef().and_then(|reference| {
-                    let dictionary = CGPDFPage::dictionary(Some(&reference));
-                    let mut stream = null_mut();
-                    let key = NonNull::from(OCR_TEXT_KEY).cast();
-                    if CGPDFDictionary::stream(dictionary, key, &mut stream) {
-                        CGPDFStream::data(stream, null_mut())
-                    } else {
-                        None
-                    }
-                })
-            };
-            if let Some(ordered) = embedded
-                .and_then(|data| String::from_utf8(data.to_vec()).ok())
-                .filter(|text| !text.trim().is_empty())
-            {
+            if let Some(ordered) = embedded_ocr(page) {
                 return Ok((label, ordered, true));
             }
             Ok((label, text(page), false))
@@ -197,8 +185,13 @@ impl Pdf {
         options: &OcrOptions,
         character_positions: bool,
     ) -> Result<Vec<Observation>, Error> {
+        let positions = if character_positions {
+            super::ocr::Positions::Characters
+        } else {
+            super::ocr::Positions::None
+        };
         self.with_page(page, |native_page| {
-            super::ocr::recognize_page(native_page, page, options, character_positions)
+            super::ocr::recognize_page(native_page, page, options, positions)
         })
     }
 
@@ -279,12 +272,31 @@ impl Pdf {
     }
 }
 
-fn label(page: &PDFPage) -> Option<String> {
+pub(super) fn embedded_ocr(page: &PDFPage) -> Option<String> {
+    // SAFETY: 字典和流都属于当前页的 CoreGraphics 对象，在取出流数据前保持存活。
+    let embedded = unsafe {
+        page.pageRef().and_then(|reference| {
+            let dictionary = CGPDFPage::dictionary(Some(&reference));
+            let mut stream = null_mut();
+            let key = NonNull::from(OCR_TEXT_KEY).cast();
+            if CGPDFDictionary::stream(dictionary, key, &mut stream) {
+                CGPDFStream::data(stream, null_mut())
+            } else {
+                None
+            }
+        })
+    };
+    embedded
+        .and_then(|data| String::from_utf8(data.to_vec()).ok())
+        .filter(|text| !text.trim().is_empty())
+}
+
+pub(super) fn label(page: &PDFPage) -> Option<String> {
     // SAFETY: 调用者在有效页面的当前线程和 autorelease pool 内读取标签。
     unsafe { page.label() }.map(|label| label.to_string())
 }
 
-fn text(page: &PDFPage) -> String {
+pub(super) fn text(page: &PDFPage) -> String {
     // SAFETY: 调用者在有效页面的当前线程和 autorelease pool 内读取文字层。
     unsafe { page.string() }
         .map(|text| text.to_string())

@@ -1,0 +1,58 @@
+{
+  "name": "pdf_read",
+  "title": "读取 PDF 页面",
+  "description": "按原文件物理页读取文字和页图。图、公式、扫描页可看图片，或打开本机 OCR。要精确找一句话用 pdf_find。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "file": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"},
+      "pages": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"}, "maxItems": 20, "description": "按给定顺序读取，可重复。"},
+      "start_page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "default": 1, "description": "省略 pages 时，从这页起读最多 5 页。"},
+      "images": {"type": "boolean", "default": true},
+      "format": {"type": "string", "enum": ["jpeg", "png"], "default": "jpeg"},
+      "max_side": {"type": "integer", "minimum": 1, "maximum": 4096, "default": 1568, "description": "页图最长边像素数。"},
+      "ocr": {"type": "boolean", "default": false, "description": "文字层不足或乱码时补做本机 OCR。"},
+      "languages": {"type": "array", "items": {"type": "string"}, "maxItems": 8, "default": ["zh-Hans", "zh-Hant", "en-US"], "description": "按优先顺序列出 Vision 的 BCP 47 语言标记。"}
+    },
+    "required": ["file"]
+  },
+  "result": "Markdown 按页给出文字。data 附页码、页标签、来源、单页错误和附件名。默认附非空白成功页的 JPEG 图。长页的 Markdown 和 data 各给同一段最多 4000 字的摘录，全文作 UTF-8 文本附件。省略 pages 时，Output.next 带下一批的 start_page 并保留选项。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "pages": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "index": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"},
+            "label": {"type": "string"},
+            "source": {"type": "string", "enum": ["text", "ocr", "blank", "no_text", "failed"]},
+            "text": {"type": "string"},
+            "image_attachment": {"type": "string"},
+            "text_attachment": {"type": "string"},
+            "error": {"type": "object"}
+          },
+          "required": ["index", "source"]
+        },
+        "maxItems": 20
+      }
+    },
+    "required": ["pages"]
+  },
+  "errors": [
+    {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},
+    {"kind": "damaged_pdf", "message": "这份 PDF 已损坏，打不开。", "hint": "请用原始文件或重新导出 PDF。", "retry": false},
+    {"kind": "locked", "message": "这份 PDF 加了密码，打不开。", "hint": "请让用户提供 PDF 的打开密码。", "retry": false},
+    {"kind": "wrong_password", "message": "PDF 密码不正确。", "hint": "请让用户重新提供 PDF 密码。", "retry": false},
+    {"kind": "render_failed", "message": "这一页画不出来。", "hint": "请尝试读取文字或换一个页码。", "retry": false},
+    {"kind": "ocr_failed", "message": "这一页识别失败。", "hint": "请检查页图，或缩小识别范围。", "retry": false}
+  ],
+  "cost": {"kind": "local"},
+  "confirm": {"kind": "never"},
+  "effects": {"network": false, "writes": "none"},
+  "examples": [
+    {"args": {"file": "samples/out/mixed.pdf", "pages": [1]}, "expect": {"contains": "morning tide"}},
+    {"args": {"file": "samples/out/mixed.pdf", "pages": [2], "ocr": true}, "expect": {"contains": "quiet valley"}}
+  ]
+}

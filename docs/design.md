@@ -561,6 +561,7 @@ compose::assemble(parts: &[&[u8]], how: &Assembly, &Cancel) -> Result<Vec<u8>, E
 - **签名**：`insertSignature` 接收打字、笔迹或图片，捕获时生成透明 PNG。跨文档复用签名由 App 存储和传入。
 - `web/src/plan.ts` 与 Rust 的 `Plan` 使用相同 JSON 字段。`tests/fixtures/plan/*.json` 由 TS 生成对照，Rust 用同一份改动单保存并读回。
 - **App 怎么引用**：从与 Rust 相同的引擎 tag 构建并打包 `web/`，在 App 中安装本地包。复现实测与选型见 `decisions/0016`。
+- **查找**：`ViewerOptions.search(query, signal)` 由 App 接到本机 `pdf_find`。套件复用返回的物理页码和坐标框，按当前 PDF.js viewport 转成覆盖层。结果可换页和缩放。切换查询或文档会取消旧请求。高亮配色由 App 决定，接口及样式选择器见 `docs/toolkit.md`。
 - PDF.js 编辑器的内部序列化格式会随版本变：套件钉 6.5 这一线，升 PDF.js 要过套件的测试。
 
 ### 7.6 试用页
@@ -569,6 +570,7 @@ compose::assemble(parts: &[&[u8]], how: &Assembly, &Cancel) -> Result<Vec<u8>, E
 
 试用页在编辑区显示主文件原始页码，在缩略图栏整理输出页序。插入页和旋转用于输出预览，保存重开后可直接编辑这些页面。
 
+- 查找按 Enter 或点按钮运行，Studio 将当前主文件送给本机 `/api/find`。在已有结果之间导航复用结果。打开另一份文件或清空查询时取消旧查找。
 - 可搜索副本单独选原始物理页，用本机 Vision 处理。已有编辑时先保存，再在重开的文件上运行 OCR。
 - 启用 `pdfium` 时显示「选对象」和「涂黑」。对象清单按页向服务要；编号只由文件内容决定，保存时服务重新打开同一份字节，编号照样对得上。
 - 保存时确认涂黑草稿。取消保留草稿，确认后将框连同普通编辑交给引擎。确认窗口说明文件信息、书签和附件仍可能含同一内容。
@@ -622,6 +624,38 @@ doc.objects(8)?;   // Vec<PageObject>，需启用 "pdfium"
 
 ---
 
-## 9. Agent 工具包和 pdf_find（v0.7.0，计划）
+## 9. Agent 工具包和 pdf_find（v0.7.0）
 
-工具清单草案在 v0.7 Phase 1 写进本节（`ROADMAP.md`、`decisions/0020`）：每个工具的参数、结果、出错、费用、确认、影响和例子先于实现，站主看过再落代码。
+### 9.1 工具清单
+
+`tools/` 每个工具一份 JSON（engine-core 的 `ToolSpec`）：参数和结果的 Schema、默认值和上限、费用、确认、影响、错误、例子。Rust 的 `tools::manifest` / `tools::call`、命令行和 App 导出的模型工具都从这一份来；例子在 `tests/tools.rs` 里逐个跑。接线见 [toolkit.md](toolkit.md)。
+
+| 用途 | 清单 |
+| --- | --- |
+| 读页与定位 | [pdf_info](../tools/pdf_info.json)、[pdf_read](../tools/pdf_read.json)、[pdf_render](../tools/pdf_render.json)、[pdf_ocr](../tools/pdf_ocr.json)、[pdf_find](../tools/pdf_find.json) |
+| 数学识别 | [pdf_mathpix_quote](../tools/pdf_mathpix_quote.json)、[pdf_mathpix](../tools/pdf_mathpix.json) |
+| 看结构与对象 | [pdf_outline](../tools/pdf_outline.json)、[pdf_annotations](../tools/pdf_annotations.json)、[pdf_fields](../tools/pdf_fields.json)、[pdf_objects](../tools/pdf_objects.json) |
+| 写新 PDF | [pdf_edit](../tools/pdf_edit.json)、[pdf_redact](../tools/pdf_redact.json)、[pdf_searchable](../tools/pdf_searchable.json)、[pdf_compose_images](../tools/pdf_compose_images.json)、[pdf_assemble](../tools/pdf_assemble.json)、[pdf_split](../tools/pdf_split.json) |
+
+- **代码**：`src/tools/mod.rs` 注册清单和处理器、取文件和密码；`read.rs`（读、结构、对象）、`find.rs`、`write.rs`（交回新 PDF）、`meter.rs`（Mathpix 报价和执行）各管一类。处理器只做参数到 Rust 接口的转换和 Markdown 排版，业务逻辑都在原有模块里。
+- **结果**：模型读 `text`（Markdown），App 读 `data`，页图和新文件放 `attachments`。有 `next` 时原样作为同一工具的下一次参数（连续读每批 5 页，列表类按 `offset` / `limit`）。位置一律物理页码，页标签另给。越界页直接报 `bad_args`。
+- **文件和密码**：参数只收宿主授权的文件标识；打开密码、新密码、Mathpix 密钥都从调用上下文按键名取（`toolkit.md`）。
+- **改动单**：`pdf_edit` 的 `plan` 和 Web、Rust 的 `Plan` 同一份 JSON，清单写全了每种标注、删除、填表、对象、目录、元数据要哪些字段。Schema 子集没有 `oneOf`，按种类要的字段写在说明里，类型错由 Rust 反序列化报 `bad_args`。永久涂黑单列 `pdf_redact`（每次确认），`pdf_edit` 见到 `plan.redact` 就拒绝。
+- **Mathpix**：`pdf_mathpix_quote` 免费、只在本机报价；`pdf_mathpix` 是计费工具，每次确认，报价和执行用同一处单价（`Prices` 里 `Mathpix` / `page`，默认 $0.005），两处都拒绝非正单价（Core 对零金额不问确认）。上传没成功按 §3.6 记 $0，重试照样要用户再确认。
+
+### 9.2 pdf_find
+
+- **怎么找**：`find::find(doc, pages, query, options, cancel, progress)` 逐物理页交给 engine-core 的 `Finder`，归一化、整句 / 按词都在 engine-core。每页取哪份文字：
+  1. 有引擎写的可搜索层（`EnginePDFOCRText`）→ 用存下的识别原文，来源 `ocr`；框依次从文字层选区、PDFium、现做的 Vision 里核实。
+  2. 文字层够代表整页（和 `read` 同一门槛：≥ 20 个字、不是乱码）→ 用文字层，来源 `text`。
+  3. 开了 `pdfium` 且 PDFium 取得到整页文字（PDFKit 读不出的早期 OCR 层）→ 用它。
+  4. 其余：页面不是近乎全白（扫描页、整页图，带几个字的页码或水印也算）且 `ocr` 开着 → 现做 Vision，来源 `ocr`；没识别出字再找文字层里那几个字。
+- **框**：PDFKit 按原文的 UTF-16 区间取选区、核对选区文字，再按行给框（`decisions/0021`）；Vision 给词或字的框，给不出时用行框；核实不了的命中保留页码、`rects` 为空。坐标约定见 `CLAUDE.md`「六」。
+- **Markdown**：每处一行（页码、页标签、本机识别标记、前后文），中文之间的换行去掉；按词时先说是哪几页同时出现这些词。
+- **Web**：`ViewerOptions.search(query, signal)` 由 App 接到 `pdf_find`，套件按框画高亮、跳页，接口见 `toolkit.md`。
+- **已知局限**（2026-11-27 审核，`decisions/0021`）：PDFKit 取字在部分期刊会丢 fi 连字（取成 `f` 或空格），这些词 `read`、`find` 都对不上；个别中文字体的行框约有字高的 2.4 倍（和「预览」里选中时一样），高亮会罩到下一行。
+
+### 9.3 Rust 接口的变化
+
+- `engine_pdf::Cancel` 就是 engine-core 的 `Cancel`，用法不变。
+- 工具层的类型在 `engine_pdf::tools` 下：`ToolError`、`Quote`、`Usage`、`Ctx`、`Files`、`Keys`、`Approve`、`Prices`、`Overrides` 等，都来自 engine-core。`Error` 可转成 `ToolError`（种类、中文说明、下一步、能否重试，不带路径和服务原文）；`mathpix::Quote`、`mathpix::Usage`、`mathpix::Failure` 保留原样，另有转成共享类型的 `From`。

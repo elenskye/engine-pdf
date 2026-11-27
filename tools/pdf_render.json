@@ -1,0 +1,41 @@
+{
+  "name": "pdf_render",
+  "title": "渲染 PDF 页图",
+  "description": "把指定物理页按原方向画成白底 PNG 或 JPEG。图取阅读器显示的 CropBox，含页面旋转。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "file": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"},
+      "page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"},
+      "format": {"type": "string", "enum": ["jpeg", "png"], "default": "jpeg"},
+      "max_side": {"type": "integer", "minimum": 1, "maximum": 4096, "default": 1568, "description": "页图最长边像素数。"}
+    },
+    "required": ["file", "page"]
+  },
+  "result": "Markdown 标页码和尺寸。data 为页码、格式、像素宽高和附件名，页图作附件。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"},
+      "format": {"type": "string", "enum": ["jpeg", "png"], "default": "jpeg"},
+      "width": {"type": "integer", "minimum": 1, "maximum": 4096},
+      "height": {"type": "integer", "minimum": 1, "maximum": 4096},
+      "attachment": {"type": "string"}
+    },
+    "required": ["page", "format", "width", "height", "attachment"]
+  },
+  "errors": [
+    {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},
+    {"kind": "damaged_pdf", "message": "这份 PDF 已损坏，打不开。", "hint": "请用原始文件或重新导出 PDF。", "retry": false},
+    {"kind": "locked", "message": "这份 PDF 加了密码，打不开。", "hint": "请让用户提供 PDF 的打开密码。", "retry": false},
+    {"kind": "wrong_password", "message": "PDF 密码不正确。", "hint": "请让用户重新提供 PDF 密码。", "retry": false},
+    {"kind": "render_failed", "message": "这一页画不出来。", "hint": "请尝试读取文字或换一个页码。", "retry": false}
+  ],
+  "cost": {"kind": "local"},
+  "confirm": {"kind": "never"},
+  "effects": {"network": false, "writes": "none"},
+  "examples": [
+    {"args": {"file": "samples/out/mixed.pdf", "page": 1, "format": "png"}, "expect": {"data": {"page": 1, "format": "png"}}},
+    {"args": {"file": "samples/out/mixed.pdf", "page": 0}, "expect": {"error": "bad_args"}}
+  ]
+}

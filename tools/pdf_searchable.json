@@ -1,0 +1,41 @@
+{
+  "name": "pdf_searchable",
+  "title": "生成可搜索 PDF",
+  "description": "用本机 OCR 为选中的扫描页加不可见文字层。已有可用文字的页和空白页会跳过。请保存输出后再索引或查找。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "file": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"},
+      "pages": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"}, "maxItems": 200, "description": ""},
+      "languages": {"type": "array", "items": {"type": "string"}, "maxItems": 8, "default": ["zh-Hans", "zh-Hant", "en-US"], "description": "按优先顺序列出 Vision 的 BCP 47 语言标记。"}
+    },
+    "required": ["file", "pages"]
+  },
+  "result": "Markdown 给出输出摘要，data 列页数和附件名，PDF 字节作附件。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "page_count": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+      "attachment": {"type": "string"}
+    },
+    "required": ["page_count", "attachment"]
+  },
+  "errors": [
+    {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},
+    {"kind": "damaged_pdf", "message": "这份 PDF 已损坏，打不开。", "hint": "请用原始文件或重新导出 PDF。", "retry": false},
+    {"kind": "locked", "message": "这份 PDF 加了密码，打不开。", "hint": "请让用户提供 PDF 的打开密码。", "retry": false},
+    {"kind": "wrong_password", "message": "PDF 密码不正确。", "hint": "请让用户重新提供 PDF 密码。", "retry": false},
+    {"kind": "owner_password_required", "message": "请用权限密码打开 PDF 后再编辑或更改密码。", "hint": "请让用户提供 PDF 的权限密码，再执行本次操作。", "retry": false},
+    {"kind": "password_action_required", "message": "请指定输出使用新密码或去掉现有密码。", "hint": "请让用户明确选择输出的加密方式。", "retry": false},
+    {"kind": "save_failed", "message": "PDF 保存失败。", "hint": "请缩小改动范围，或换一份 PDF 重新操作。", "retry": false},
+    {"kind": "render_failed", "message": "这一页画不出来。", "hint": "请尝试读取文字或换一个页码。", "retry": false},
+    {"kind": "ocr_failed", "message": "这一页识别失败。", "hint": "请检查页图，或缩小识别范围。", "retry": false}
+  ],
+  "cost": {"kind": "local"},
+  "confirm": {"kind": "never"},
+  "effects": {"network": false, "writes": "new_bytes"},
+  "examples": [
+    {"args": {"file": "samples/out/mixed.pdf", "pages": [2, 5]}, "expect": {"data": {"page_count": 10}}}
+  ],
+  "note": "加密文件先由用户授权导出无密码副本。"
+}

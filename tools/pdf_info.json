@@ -1,0 +1,38 @@
+{
+  "name": "pdf_info",
+  "title": "读取 PDF 信息",
+  "description": "先核对 PDF 的页数、标题、作者、日期和权限。查印刷页码用 pdf_read，读目录用 pdf_outline。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "file": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"},
+      "image_counts": {"type": "boolean", "default": false, "description": "另统计宽高均至少 32 像素的图片 XObject 页。"}
+    },
+    "required": ["file"]
+  },
+  "result": "Markdown 给出文件摘要。data 附 page_count、info。请求统计图片时，附含图页数和完整 CSV 附件名。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "page_count": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+      "info": {"type": "object"},
+      "pages_with_images": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+      "image_counts_attachment": {"type": "string"}
+    },
+    "required": ["page_count", "info"]
+  },
+  "errors": [
+    {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},
+    {"kind": "damaged_pdf", "message": "这份 PDF 已损坏，打不开。", "hint": "请用原始文件或重新导出 PDF。", "retry": false},
+    {"kind": "locked", "message": "这份 PDF 加了密码，打不开。", "hint": "请让用户提供 PDF 的打开密码。", "retry": false},
+    {"kind": "wrong_password", "message": "PDF 密码不正确。", "hint": "请让用户重新提供 PDF 密码。", "retry": false}
+  ],
+  "cost": {"kind": "local"},
+  "confirm": {"kind": "never"},
+  "effects": {"network": false, "writes": "none"},
+  "examples": [
+    {"args": {"file": "samples/out/mixed.pdf"}, "expect": {"data": {"page_count": 10}}},
+    {"args": {"file": "samples/out/locked.pdf"}, "expect": {"error": "locked"}},
+    {"args": {"file": "samples/out/not_pdf.txt"}, "expect": {"error": "not_pdf"}}
+  ]
+}

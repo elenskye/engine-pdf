@@ -26,6 +26,8 @@ pub use transport::{
 use protocol::valid_id;
 
 pub const PRICE_PER_PAGE: f64 = 0.005;
+pub(crate) const SERVICE: &str = "Mathpix";
+pub(crate) const UNIT: &str = "page";
 const BASE: &str = "https://api.mathpix.com";
 const PDF_PATH: &str = "/v3/pdf";
 
@@ -42,6 +44,10 @@ impl Keys {
             app_id: Zeroizing::new(app_id.into()),
             app_key: Zeroizing::new(app_key.into()),
         }
+    }
+
+    pub(crate) fn from_zeroizing(app_id: Zeroizing<String>, app_key: Zeroizing<String>) -> Self {
+        Self { app_id, app_key }
     }
 
     /// 自定义传输设置请求头时使用。
@@ -70,7 +76,7 @@ pub struct Quote {
 
 impl Quote {
     pub fn service(&self) -> &'static str {
-        "Mathpix"
+        SERVICE
     }
 
     /// 原始物理页码，升序去重。
@@ -95,6 +101,17 @@ impl Quote {
     }
 }
 
+impl From<&Quote> for engine_core::call::Quote {
+    fn from(quote: &Quote) -> Self {
+        Self {
+            service: quote.service().into(),
+            unit: UNIT.into(),
+            units: quote.pages().len() as f64,
+            usd: quote.usd(),
+        }
+    }
+}
+
 /// 使用默认单价在本地报价。
 pub fn quote(doc: &Document, pages: &[u32]) -> Result<Quote, Error> {
     quote_at_price(doc, pages, PRICE_PER_PAGE)
@@ -105,7 +122,11 @@ pub fn quote_with_options(doc: &Document, pages: &[u32], opts: &Options) -> Resu
     quote_at_price(doc, pages, opts.price_per_page)
 }
 
-fn quote_at_price(doc: &Document, pages: &[u32], price_per_page: f64) -> Result<Quote, Error> {
+pub(crate) fn quote_at_price(
+    doc: &Document,
+    pages: &[u32],
+    price_per_page: f64,
+) -> Result<Quote, Error> {
     if pages.is_empty() {
         return Err(Error::BadPageSpec("请至少选择一页。".into()));
     }
@@ -256,6 +277,18 @@ pub struct Usage {
     pub remote_deleted: Option<bool>,
 }
 
+impl From<&Usage> for engine_core::call::Usage {
+    fn from(usage: &Usage) -> Self {
+        Self {
+            service: SERVICE.into(),
+            unit: UNIT.into(),
+            units: f64::from(usage.pages_billed),
+            usd: usage.usd,
+            estimated: usage.estimated,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Failure {
     pub error: Error,
@@ -280,6 +313,18 @@ impl From<Error> for Failure {
             error,
             usage: Usage::default(),
         }
+    }
+}
+
+impl From<engine_core::Cancelled> for Failure {
+    fn from(error: engine_core::Cancelled) -> Self {
+        Error::from(error).into()
+    }
+}
+
+impl From<Failure> for engine_core::call::ToolError {
+    fn from(Failure { error, usage }: Failure) -> Self {
+        Self::from(error).with_usage((usage != Usage::default()).then(|| (&usage).into()))
     }
 }
 

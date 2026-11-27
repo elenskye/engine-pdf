@@ -48,6 +48,8 @@ label { display: inline-flex; gap: .35rem; align-items: center; }
 .reader { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; }
 .navigation { padding: .35rem .65rem; }
 .navigation input[type="search"] { width: 9rem; }
+.engine-pdf-find-match { background: #ffd24d66; }
+.engine-pdf-find-match[data-current="true"] { background: #ffae5159; outline: 1px solid #b35c16; }
 .viewport { position: relative; min-height: 0; background: #e4e7ed; }
 #viewer-container { position: absolute; inset: 0; overflow: auto; }
 #viewer-container[data-draw="true"] { cursor: crosshair; touch-action: none; }

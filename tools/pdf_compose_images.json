@@ -1,0 +1,31 @@
+{
+  "name": "pdf_compose_images",
+  "title": "把图片打包为 PDF",
+  "description": "按输入顺序把照片、扫描图组装成 PDF，每张一页。多帧 TIFF 按帧排页。扫描图需要搜索时，可再用 pdf_searchable。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "files": {"type": "array", "items": {"type": "string"}, "maxItems": 100, "description": "按顺序排列的已授权图片文件标识。"}
+    },
+    "required": ["files"]
+  },
+  "result": "Markdown 给出输出摘要，data 列页数和附件名，PDF 字节作附件。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "page_count": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+      "attachment": {"type": "string"}
+    },
+    "required": ["page_count", "attachment"]
+  },
+  "errors": [
+    {"kind": "invalid_image", "message": "图片格式无效或无法解码。", "hint": "请换一张可打开的图片，再提交改动。", "retry": false},
+    {"kind": "save_failed", "message": "PDF 保存失败。", "hint": "请缩小改动范围，或换一份 PDF 重新操作。", "retry": false}
+  ],
+  "cost": {"kind": "local"},
+  "confirm": {"kind": "never"},
+  "effects": {"network": false, "writes": "new_bytes"},
+  "examples": [
+    {"args": {"files": ["samples/out/read-page.jpg"]}, "expect": {"data": {"page_count": 1}}}
+  ]
+}

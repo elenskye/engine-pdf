@@ -1,0 +1,35 @@
+{
+  "name": "pdf_fields",
+  "title": "读取 PDF 表单字段",
+  "description": "读取 AcroForm 的逻辑字段、当前值、选项、只读状态和控件位置。填写请用 pdf_edit。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "file": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"},
+      "offset": {"type": "integer", "minimum": 0, "maximum": 4294967295, "default": 0, "description": "从第几个条目接着取，第一条为 0。"},
+      "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}
+    },
+    "required": ["file"]
+  },
+  "result": "Markdown 列字段名、类型和当前值。data 附原字段名、原值和各控件的物理页及坐标框。还有条目时，Output.next 带原参数和新的 offset，可直接接着取。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "items": {"type": "array", "items": {"type": "object"}, "maxItems": 100},
+      "total": {"type": "integer", "minimum": 0, "maximum": 4294967295}
+    },
+    "required": ["items", "total"]
+  },
+  "errors": [
+    {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},
+    {"kind": "damaged_pdf", "message": "这份 PDF 已损坏，打不开。", "hint": "请用原始文件或重新导出 PDF。", "retry": false},
+    {"kind": "locked", "message": "这份 PDF 加了密码，打不开。", "hint": "请让用户提供 PDF 的打开密码。", "retry": false},
+    {"kind": "wrong_password", "message": "PDF 密码不正确。", "hint": "请让用户重新提供 PDF 密码。", "retry": false}
+  ],
+  "cost": {"kind": "local"},
+  "confirm": {"kind": "never"},
+  "effects": {"network": false, "writes": "none"},
+  "examples": [
+    {"args": {"file": "samples/out/form.pdf"}, "expect": {"data": {"total": 4}}}
+  ]
+}

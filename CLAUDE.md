@@ -121,7 +121,7 @@ engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库�
 - **位置约定**（find、读写共用）：页码一律是原文件的**物理页码，从 1 起**；页标签另给；框用 PDF 坐标（左下原点，pt，含 CropBox 偏移）。
 - **边界**：PDF 是数据，填表只写字段的值，不跑表单里的计算脚本。PDF 密码和 Mathpix 密钥一样由 App 交进来。Mathpix 真跑只用样本，每版 $1（每页 $0.005）。编辑统一走 `edit::apply`；`Document` 不跨线程（`!Send`）；每页一个 autorelease pool；OCR 一次一页。
 - **`web/`**：TS 严格模式，`pdfjs-dist` 是 peer 依赖（钉 6.5 这一线）；`web/src/plan.ts` 和 Rust 的 `edit::Plan` 一一对应，两边的测试吃同一套 `tests/fixtures/plan/`。
-- **真实文件核对**：`~/ResearchLab-test/zotero-copy`、`local/pdf`、`local/scans`（知网论文、带结构树的期刊论文、84 页杂志、扫描件）。检查程序在 `local/v060/review/`。
+- **真实文件核对**：`~/ResearchLab-test/zotero-copy`、`local/pdf`、`local/scans`（知网论文、带结构树的期刊论文、84 页杂志、扫描件）。检查程序：编辑和涂黑在 `local/v060/review/`，查找和字框在 `local/v070-review/`（各有 README）。
 - **`scripts/check.sh`**：默认、`samples,fake`、Mac 上再加 `samples,fake,pdfium` 三种配置的 `cargo test` + `cargo clippy -D warnings`，加 `web/` 的类型检查和测试。
 
 | 文件 | 放什么 |
@@ -132,7 +132,8 @@ engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库�
 | `ROADMAP.md` | 版本与 Phase 表、各 App 接入进度、用户验收清单 |
 | `CHANGELOG.md` | 每个发出去的版本：公共接口和工具清单的变化、App 升级要改什么 |
 | `docs/design.md` | 设计稿：工具清单、Rust 接口、原生实现、云端交界、迁移、验收 |
-| `docs/toolkit.md` | 工具包的接线说明（v0.7 起） |
+| `tools/*.json` | 工具清单，一个工具一份（给模型的说明、参数、结果、错误、费用、确认、例子） |
+| `docs/toolkit.md` | 工具包的接线说明：App 交什么、键名、费用和确认、命令行、Web 查找 |
 | `docs/decisions/` | 选型决定，一事一文 |
 | `docs/brief.md`、`brief-2.md`、`brief-pomelo.md` | 站主的简报原件，不改 |
 | `THIRD_PARTY.md` | 第三方依赖 |

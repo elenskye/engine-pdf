@@ -101,3 +101,14 @@ impl Pdf {
         match self.0 {}
     }
 }
+
+pub(crate) fn scan_find(
+    _: &crate::Document,
+    _: &[u32],
+    _: &crate::find::Options,
+    _: &crate::Cancel,
+    _: &dyn Fn(usize, u32),
+    _: &mut engine_core::find::Finder<crate::find::Location>,
+) -> Result<(), crate::Error> {
+    Err(crate::Error::Unsupported)
+}

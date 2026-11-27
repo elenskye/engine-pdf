@@ -1,0 +1,56 @@
+{
+  "name": "pdf_assemble",
+  "title": "拼装多份 PDF",
+  "description": "按给定顺序拼接各份未加密 PDF 的全部页面，可同时指定输出链接、目录和部分元数据。只挑来源中的部分页或改旋转时用 pdf_edit。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "files": {"type": "array", "items": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"}, "maxItems": 20},
+      "links": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"},
+            "rect": {
+              "type": "object",
+              "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "width": {"type": "number", "minimum": 0}, "height": {"type": "number", "minimum": 0}},
+              "required": ["x", "y", "width", "height"],
+              "description": "原 PDF 坐标。单位 pt，左下原点，保留 CropBox 偏移。"
+            },
+            "target": {"type": "object"}
+          },
+          "required": ["page", "rect", "target"]
+        },
+        "maxItems": 100,
+        "description": "链接位置和页内目标使用输出物理页码。"
+      },
+      "outline": {"type": "array", "items": {"type": "object"}, "maxItems": 100, "description": "新目录，页内目标使用输出物理页码。"},
+      "info": {"type": "object"}
+    },
+    "required": ["files"]
+  },
+  "result": "Markdown 给出输出摘要，data 列页数和附件名，PDF 字节作附件。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "page_count": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+      "attachment": {"type": "string"}
+    },
+    "required": ["page_count", "attachment"]
+  },
+  "errors": [
+    {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},
+    {"kind": "damaged_pdf", "message": "这份 PDF 已损坏，打不开。", "hint": "请用原始文件或重新导出 PDF。", "retry": false},
+    {"kind": "locked", "message": "这份 PDF 加了密码，打不开。", "hint": "请让用户提供 PDF 的打开密码。", "retry": false},
+    {"kind": "wrong_password", "message": "PDF 密码不正确。", "hint": "请让用户重新提供 PDF 密码。", "retry": false},
+    {"kind": "save_failed", "message": "PDF 保存失败。", "hint": "请缩小改动范围，或换一份 PDF 重新操作。", "retry": false},
+    {"kind": "form_edit_unavailable", "message": "请先烧平可填写表单，再调整页面顺序或旋转。", "hint": "请让用户决定是否烧平表单，再调整页面。", "retry": false}
+  ],
+  "cost": {"kind": "local"},
+  "confirm": {"kind": "never"},
+  "effects": {"network": false, "writes": "new_bytes"},
+  "examples": [
+    {"args": {"files": ["samples/out/text_en.pdf", "samples/out/text_zh.pdf"]}, "expect": {"data": {"page_count": 6}}}
+  ]
+}

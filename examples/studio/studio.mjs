@@ -10,11 +10,13 @@ let sources = [];
 let meta, organizer, outline, selectedOutline, downloadUrl;
 let selectedPage = 0;
 let busy = false;
+let findMatches = 0;
 const infoFields = ["title", "author", "subject", "keywords", "creator"];
 const annotations = new Map();
 const reader = new EditorViewer({
   container: element("viewer-container"), viewer: element("viewer"), assets,
   annotations: readerAnnotations,
+  search: async (query, signal) => (await request("find", [sources[0]], { query }, signal)).json(),
   onPage(page, label) {
     element("page-number").value = page;
     element("page-number").title = label ?? "";
@@ -23,7 +25,18 @@ const reader = new EditorViewer({
     if (tools.tool === "object") showObjects(page);
   },
   onScale: scale => { element("scale").value = `${Math.round(scale * 100)}%`; },
-  onFind: (current, total) => { element("find-count").value = element("search").value ? `${current} / ${total}` : ""; },
+  onFind(current, total, { pending, result }) {
+    findMatches = result?.hits.length ?? 0;
+    element("find-previous").disabled = element("find-next").disabled = busy || findMatches < 2;
+    const currentHit = result?.hits[current - 1];
+    const details = [
+      currentHit?.source === "ocr" && "本机识别",
+      currentHit?.how === "words" && "按词",
+      result?.truncated && `仅列前 ${findMatches} 项`,
+    ].filter(Boolean).join(" · ");
+    element("find-count").value = pending ? "查找中…" : !result ? "" : total
+      ? `${current} / ${total}${details ? ` · ${details}` : ""}` : "无结果";
+  },
 });
 const tools = new EditorTools(reader, () => { controls(); void showAnnotations(); });
 
@@ -32,7 +45,7 @@ function status(message, error = false) {
   element("status").dataset.error = String(error);
 }
 
-async function request(path, files, extra = {}) {
+async function request(path, files, extra = {}, signal) {
   const header = new TextEncoder().encode(JSON.stringify({
     lengths: files.map(file => file.bytes.length), passwords: files.map(file => file.password ?? null), ...extra,
   }));
@@ -40,7 +53,7 @@ async function request(path, files, extra = {}) {
   new DataView(prefix.buffer).setUint32(0, header.length, true);
   const response = await fetch(`/api/${path}`, {
     method: "POST", headers: { "Content-Type": "application/x-engine-pdf" },
-    body: new Blob([prefix, header, ...files.map(file => file.bytes)]),
+    body: new Blob([prefix, header, ...files.map(file => file.bytes)]), signal,
   });
   if (!response.ok) throw new Error(await response.text() || `请求失败（${response.status}）。`);
   return response;
@@ -101,6 +114,8 @@ function controls() {
   }
   element("save").textContent = tools.pendingRedactions.length ? "确认涂黑并保存" : "保存副本";
   if (!enabled) return;
+  element("find-submit").disabled = !element("search").value.trim();
+  element("find-previous").disabled = element("find-next").disabled = findMatches < 2;
   element("page-up").disabled = selectedPage === 0;
   element("page-down").disabled = selectedPage === organizer.pages.length - 1;
   element("page-remove").disabled = organizer.pages.length === 1;
@@ -215,6 +230,7 @@ function fileAction(id, action) {
 }
 
 fileAction("open", async file => {
+  await reader.find("");
   const source = { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name };
   const info = await inspect(source);
   if (info) {
@@ -554,9 +570,25 @@ element("page-number").onchange = () => {
 element("zoom-out").onclick = () => reader.zoomBy(-1);
 element("zoom-in").onclick = () => reader.zoomBy(1);
 element("fit-width").onclick = () => reader.zoom("page-width");
-element("search").oninput = () => reader.find(element("search").value);
-element("find-previous").onclick = () => reader.find(element("search").value, "previous");
-element("find-next").onclick = () => reader.find(element("search").value, "next");
+element("search").oninput = () => {
+  element("find-submit").disabled = !element("search").value.trim();
+  void reader.find("");
+};
+element("search").onkeydown = event => {
+  if (event.key !== "Enter" || event.isComposing) return;
+  event.preventDefault();
+  startFind(event.shiftKey ? "previous" : "next");
+};
+element("find-submit").onclick = () => startFind("new");
+element("find-previous").onclick = () => startFind("previous");
+element("find-next").onclick = () => startFind("next");
+
+function startFind(direction) {
+  void reader.find(element("search").value, direction).catch(error => {
+    element("find-count").value = "查找失败";
+    status(error.message, true);
+  });
+}
 element("security").onchange = () => { element("lock-options").hidden = element("security").value !== "lock"; };
 element("source-password").onclick = () => void work(async () => {
   const source = sources[organizer.pages[selectedPage].source];

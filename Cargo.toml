@@ -1,6 +1,6 @@
 [package]
 name = "engine-pdf"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Peck、Pith、Pomelo 共用的 Mac PDF 引擎：打开、取字、渲染、本机 OCR、Mathpix 识别"
@@ -13,6 +13,7 @@ pdfium = ["dep:pdfium-render"]
 samples = ["dep:objc2-core-text", "objc2-core-foundation/CFAttributedString", "objc2-core-foundation/CFDictionary", "objc2-core-foundation/CFString"]
 
 [dependencies]
+engine-core = { git = "https://github.com/elenskye/engine-core", tag = "v0.2.0" }
 serde = { version = "^1.0.229", features = ["derive"] }
 serde_json = "^1.0.154"
 zeroize = { version = "^1.9.1", features = ["serde"] }
@@ -23,7 +24,7 @@ lopdf = { version = "^0.42.0", default-features = false }
 pdfium-render = { version = "^0.9.6", optional = true, default-features = false, features = ["pdfium_7881", "static", "libc++", "core_graphics", "thread_safe"] }
 objc2 = "^0.6.5"
 objc2-foundation = { version = "^0.3.2", default-features = false, features = ["std", "NSArray", "NSData", "NSDate", "NSDictionary", "NSEnumerator", "NSString", "NSURL", "NSUUID", "NSValue"] }
-objc2-pdf-kit = { version = "^0.3.2", default-features = false, features = ["std", "PDFAction", "PDFActionGoTo", "PDFActionURL", "PDFAnnotation", "PDFAnnotationUtilities", "PDFBorder", "PDFDestination", "PDFDocument", "PDFOutline", "PDFPage", "objc2-app-kit", "objc2-core-foundation", "objc2-core-graphics"] }
+objc2-pdf-kit = { version = "^0.3.2", default-features = false, features = ["std", "PDFAction", "PDFActionGoTo", "PDFActionURL", "PDFAnnotation", "PDFAnnotationUtilities", "PDFBorder", "PDFDestination", "PDFDocument", "PDFOutline", "PDFPage", "PDFSelection", "objc2-app-kit", "objc2-core-foundation", "objc2-core-graphics"] }
 objc2-app-kit = { version = "^0.3.2", default-features = false, features = ["std", "NSAttributedString", "NSBezierPath", "NSBitmapImageRep", "NSColor", "NSColorSpace", "NSFont", "NSGraphicsContext", "NSImage", "NSImageRep", "NSStringDrawing", "objc2-core-foundation", "objc2-core-graphics"] }
 objc2-core-foundation = { version = "^0.3.2", default-features = false, features = ["std", "CFData"] }
 objc2-core-graphics = { version = "^0.3.2", default-features = false, features = ["std", "CGAffineTransform", "CGBitmapContext", "CGColorSpace", "CGContext", "CGDataConsumer", "CGGeometry", "CGImage", "CGPDFArray", "CGPDFContext", "CGPDFDictionary", "CGPDFDocument", "CGPDFObject", "CGPDFPage", "CGPDFStream"] }
@@ -40,3 +41,7 @@ required-features = ["samples"]
 [[example]]
 name = "make_scan"
 required-features = ["samples"]
+
+# engine-core v0.2.1 推上 GitHub 之前用本机路径；推上后上面改钉 v0.2.1、删掉这一段（HANDOFF）。
+[patch."https://github.com/elenskye/engine-core"]
+engine-core = { path = "../engine-core" }

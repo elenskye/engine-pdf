@@ -1,0 +1,163 @@
+{
+  "name": "pdf_edit",
+  "title": "编辑 PDF",
+  "description": "用改动单批量调整页面、标注、目录、表单和元数据，或移动、删除对象。需要永久涂黑时调用 pdf_redact。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "file": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"},
+      "sources": {"type": "array", "items": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"}, "maxItems": 20, "default": [], "description": "附加 PDF，source 从 1 起。主文件的 source 为 0。"},
+      "plan": {
+        "type": "object",
+        "properties": {
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {"type": "integer", "minimum": 0, "maximum": 20, "description": "0 是主文件，附加来源从 1 起。"},
+                "page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "来源文件的物理页码，从 1 起。"},
+                "rotate": {"type": "integer", "default": 0, "description": "在原旋转上追加的顺时针角度，90 的倍数。"}
+              },
+              "required": ["source", "page"]
+            },
+            "maxItems": 500,
+            "description": "输出的页序。可删页、调序、重复、旋转，或插入附加来源的页。省略时保留主文件全部页面。"
+          },
+          "add": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {"type": "integer", "minimum": 0, "maximum": 20},
+                "page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "来源文件的物理页码，从 1 起。这页的每份输出副本都带上这项标注。"},
+                "rect": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "width": {"type": "number", "minimum": 0}, "height": {"type": "number", "minimum": 0}}, "required": ["x", "y", "width", "height"], "description": "标注的外框。"},
+                "kind": {"type": "string", "enum": ["highlight", "underline", "strikeout", "note", "textBox", "ink", "shape", "image", "link"], "description": "highlight、underline、strikeout 要 quads 和 color；note 要 color，正文写 contents；textBox 要 text、fontSize、color，可选 border；ink 要 strokes 和 stroke；shape 要 shape、stroke，可选 fill；image 要 format 和 bytes；link 要 target。"},
+                "author": {"type": "string"},
+                "contents": {"type": "string", "description": "批注正文，便签的文字写在这里。"},
+                "quads": {"type": "array", "items": {"type": "object", "properties": {"topLeft": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}, "topRight": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}, "bottomLeft": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}, "bottomRight": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}}, "required": ["topLeft", "topRight", "bottomLeft", "bottomRight"]}, "maxItems": 200, "description": "每行文字一个四边形。可直接用 pdf_find 命中的 rects 换算。"},
+                "color": {"type": "object", "properties": {"red": {"type": "number", "minimum": 0, "maximum": 1}, "green": {"type": "number", "minimum": 0, "maximum": 1}, "blue": {"type": "number", "minimum": 0, "maximum": 1}, "alpha": {"type": "number", "minimum": 0, "maximum": 1}}, "required": ["red", "green", "blue", "alpha"], "description": "red、green、blue、alpha 都在 0–1。"},
+                "text": {"type": "string", "description": "文本框里的字，不自动换行。"},
+                "fontSize": {"type": "number", "minimum": 1, "maximum": 200},
+                "border": {"type": "object", "properties": {"width": {"type": "number", "minimum": 0}, "color": {"type": "object", "properties": {"red": {"type": "number", "minimum": 0, "maximum": 1}, "green": {"type": "number", "minimum": 0, "maximum": 1}, "blue": {"type": "number", "minimum": 0, "maximum": 1}, "alpha": {"type": "number", "minimum": 0, "maximum": 1}}, "required": ["red", "green", "blue", "alpha"], "description": "线色。"}}, "required": ["width", "color"], "description": "文本框的边框，省略没有边框。"},
+                "strokes": {"type": "array", "items": {"type": "array", "items": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}, "maxItems": 2000}, "maxItems": 100, "description": "绘图的每一笔，点用 PDF 坐标。"},
+                "stroke": {"type": "object", "properties": {"width": {"type": "number", "minimum": 0}, "color": {"type": "object", "properties": {"red": {"type": "number", "minimum": 0, "maximum": 1}, "green": {"type": "number", "minimum": 0, "maximum": 1}, "blue": {"type": "number", "minimum": 0, "maximum": 1}, "alpha": {"type": "number", "minimum": 0, "maximum": 1}}, "required": ["red", "green", "blue", "alpha"], "description": "线色。"}}, "required": ["width", "color"], "description": "线宽（pt）和线色。"},
+                "shape": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["rectangle", "ellipse", "line", "arrow"]}, "start": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}, "end": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}}, "required": ["kind"], "description": "矩形、椭圆画满 rect；直线、箭头另给 start 和 end。"},
+                "fill": {"type": "object", "properties": {"red": {"type": "number", "minimum": 0, "maximum": 1}, "green": {"type": "number", "minimum": 0, "maximum": 1}, "blue": {"type": "number", "minimum": 0, "maximum": 1}, "alpha": {"type": "number", "minimum": 0, "maximum": 1}}, "required": ["red", "green", "blue", "alpha"], "description": "形状的填充色，省略不填。"},
+                "format": {"type": "string", "enum": ["png", "jpeg"]},
+                "bytes": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 255}, "description": "图章图片的字节，通常由 App 交进来。"},
+                "target": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["page", "url", "none"]}, "page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "输出文件的物理页码，从 1 起。"}, "y": {"type": "number", "description": "目标页上停在哪个高度（PDF 坐标）。"}, "url": {"type": "string"}}, "required": ["kind"], "description": "链接目标：page 跳到输出文件的某页，url 打开网址。"}
+              },
+              "required": ["source", "page", "rect", "kind"]
+            },
+            "maxItems": 100,
+            "description": "新加的标注。坐标都是原 PDF 坐标：单位 pt，左下原点，保留 CropBox 偏移。"
+          },
+          "remove": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {"type": "integer", "minimum": 0, "maximum": 20},
+                "page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "来源文件的物理页码，从 1 起。"},
+                "index": {"type": "integer", "minimum": 0, "maximum": 4294967295, "description": "pdf_annotations 列出的 id.index。"}
+              },
+              "required": ["source", "page", "index"]
+            },
+            "maxItems": 100,
+            "description": "要删的已有标注，标识来自同一份文件的 pdf_annotations。"
+          },
+          "fill": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {"name": {"type": "string", "description": "pdf_fields 列出的字段名。"}},
+              "required": ["name"],
+              "description": "另给 value：文本框、下拉框、单选按钮填字符串（选项用 pdf_fields 的 value），复选框填 true 或 false。"
+            },
+            "maxItems": 100,
+            "description": "填写表单字段。只写字段的值，不跑表单脚本。"
+          },
+          "objects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {"type": "string", "enum": ["move", "delete"]},
+                "page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "主文件的物理页码，从 1 起。"},
+                "id": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "pdf_objects 列出的对象编号。"},
+                "dx": {"type": "number", "description": "move 时向右移多少 pt。"},
+                "dy": {"type": "number", "description": "move 时向上移多少 pt。"}
+              },
+              "required": ["kind", "page", "id"]
+            },
+            "maxItems": 100,
+            "description": "移动或删除主文件页面上的文字、图片。需要 PDFium。"
+          },
+          "outline": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {"type": "string"},
+                "target": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["page", "url", "none"]}, "page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "输出文件的物理页码，从 1 起。"}, "y": {"type": "number", "description": "目标页上停在哪个高度（PDF 坐标）。"}, "url": {"type": "string"}}, "required": ["kind"], "description": "目录项的目标。"},
+                "children": {"type": "array", "items": {"type": "object"}, "maxItems": 100, "description": "下一级目录，结构同上。"}
+              },
+              "required": ["title", "target"]
+            },
+            "maxItems": 100,
+            "description": "替换整棵目录，空数组删掉目录。页码指输出文件。"
+          },
+          "info": {
+            "type": "object",
+            "properties": {
+              "title": {"type": "string"},
+              "author": {"type": "string"},
+              "subject": {"type": "string"},
+              "keywords": {"type": "array", "items": {"type": "string"}, "maxItems": 50},
+              "creator": {"type": "string"}
+            },
+            "description": "改元数据，只写要改的项。"
+          }
+        },
+        "description": "改动单，和 Web 套件、Rust 的 Plan 同一份格式（camelCase）。各项都可省略，省略 pages 保留页序。永久涂黑请用 pdf_redact。"
+      },
+      "flatten": {"type": "boolean", "default": false},
+      "password_action": {"type": "string", "enum": ["none", "set", "remove"], "default": "none", "description": "无密码输出、重新设密码和明确移除已有密码。新密码由宿主提供。"},
+      "permissions": {"type": "object", "properties": {"print": {"type": "boolean"}, "copy": {"type": "boolean"}, "modify": {"type": "boolean"}, "annotate": {"type": "boolean"}}}
+    },
+    "required": ["file", "plan"]
+  },
+  "result": "Markdown 给出输出摘要，data 列页数和附件名，PDF 字节作附件。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "page_count": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+      "attachment": {"type": "string"}
+    },
+    "required": ["page_count", "attachment"]
+  },
+  "errors": [
+    {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},
+    {"kind": "damaged_pdf", "message": "这份 PDF 已损坏，打不开。", "hint": "请用原始文件或重新导出 PDF。", "retry": false},
+    {"kind": "locked", "message": "这份 PDF 加了密码，打不开。", "hint": "请让用户提供 PDF 的打开密码。", "retry": false},
+    {"kind": "wrong_password", "message": "PDF 密码不正确。", "hint": "请让用户重新提供 PDF 密码。", "retry": false},
+    {"kind": "owner_password_required", "message": "请用权限密码打开 PDF 后再编辑或更改密码。", "hint": "请让用户提供 PDF 的权限密码，再执行本次操作。", "retry": false},
+    {"kind": "password_action_required", "message": "请指定输出使用新密码或去掉现有密码。", "hint": "请让用户明确选择输出的加密方式。", "retry": false},
+    {"kind": "save_failed", "message": "PDF 保存失败。", "hint": "请缩小改动范围，或换一份 PDF 重新操作。", "retry": false},
+    {"kind": "invalid_image", "message": "图片格式无效或无法解码。", "hint": "请换一张可打开的图片，再提交改动。", "retry": false},
+    {"kind": "item_not_found", "message": "找不到指定的 PDF 项目。", "hint": "请从同一份 PDF 重新列出标注、字段或页面对象，再选取要改的项目。", "retry": false},
+    {"kind": "pdfium_unavailable", "message": "当前引擎未启用 PDFium 编辑。", "hint": "请使用启用了 PDFium 的 Mac 构建。", "retry": false},
+    {"kind": "object_edit_failed", "message": "页面对象编辑失败。", "hint": "请缩小改动范围，或改用 PDF 编辑器处理这一页。", "retry": false},
+    {"kind": "form_edit_unavailable", "message": "请先烧平可填写表单，再调整页面顺序或旋转。", "hint": "请让用户决定是否烧平表单，再调整页面。", "retry": false}
+  ],
+  "cost": {"kind": "local"},
+  "confirm": {"kind": "never"},
+  "effects": {"network": false, "writes": "new_bytes"},
+  "examples": [
+    {"args": {"file": "samples/out/mixed.pdf", "plan": {"pages": [{"source": 0, "page": 4}, {"source": 0, "page": 1}]}}, "expect": {"data": {"page_count": 2}}},
+    {"args": {"file": "samples/out/mixed.pdf", "plan": {"add": [{"source": 0, "page": 1, "rect": {"x": 54, "y": 724, "width": 66, "height": 16}, "kind": "highlight", "quads": [{"topLeft": {"x": 54, "y": 740}, "topRight": {"x": 120, "y": 740}, "bottomLeft": {"x": 54, "y": 724}, "bottomRight": {"x": 120, "y": 724}}], "color": {"red": 1, "green": 0.9, "blue": 0.2, "alpha": 1}}]}}, "expect": {"data": {"page_count": 10}}},
+    {"args": {"file": "samples/out/mixed.pdf", "plan": {"redact": [{"page": 1, "rects": [{"x": 100, "y": 700, "width": 50, "height": 20}]}]}}, "expect": {"error": "bad_args"}}
+  ],
+  "note": "plan.redact 非空时拒绝。对象改动需要 PDFium。加密主文件写出时要求权限密码及明确的密码操作。"
+}

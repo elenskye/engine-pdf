@@ -1,0 +1,61 @@
+{
+  "name": "pdf_redact",
+  "title": "永久涂黑 PDF（需 PDFium）",
+  "description": "把框内的内容从输出 PDF 中永久移除，并覆盖为黑色。调用前向用户说明物理页和区域。只要外观盖住时，用 pdf_edit 添加标注。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "file": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"},
+      "areas": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"},
+            "rects": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "width": {"type": "number", "minimum": 0}, "height": {"type": "number", "minimum": 0}},
+                "required": ["x", "y", "width", "height"],
+                "description": "原 PDF 坐标。单位 pt，左下原点，保留 CropBox 偏移。"
+              },
+              "maxItems": 100
+            }
+          },
+          "required": ["page", "rects"]
+        },
+        "maxItems": 20,
+        "description": "原文件物理页和各页的涂黑框。"
+      }
+    },
+    "required": ["file", "areas"]
+  },
+  "result": "Markdown 给出输出摘要，data 列页数和附件名，PDF 字节作附件。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "page_count": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+      "attachment": {"type": "string"}
+    },
+    "required": ["page_count", "attachment"]
+  },
+  "errors": [
+    {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},
+    {"kind": "damaged_pdf", "message": "这份 PDF 已损坏，打不开。", "hint": "请用原始文件或重新导出 PDF。", "retry": false},
+    {"kind": "locked", "message": "这份 PDF 加了密码，打不开。", "hint": "请让用户提供 PDF 的打开密码。", "retry": false},
+    {"kind": "wrong_password", "message": "PDF 密码不正确。", "hint": "请让用户重新提供 PDF 密码。", "retry": false},
+    {"kind": "owner_password_required", "message": "请用权限密码打开 PDF 后再编辑或更改密码。", "hint": "请让用户提供 PDF 的权限密码，再执行本次操作。", "retry": false},
+    {"kind": "password_action_required", "message": "请指定输出使用新密码或去掉现有密码。", "hint": "请让用户明确选择输出的加密方式。", "retry": false},
+    {"kind": "save_failed", "message": "PDF 保存失败。", "hint": "请缩小改动范围，或换一份 PDF 重新操作。", "retry": false},
+    {"kind": "pdfium_unavailable", "message": "当前引擎未启用 PDFium 编辑。", "hint": "请使用启用了 PDFium 的 Mac 构建。", "retry": false},
+    {"kind": "redaction_failed", "message": "无法确认已彻底涂黑，已停止保存。", "hint": "请核对区域和其他出现位置，调整范围后重新确认。", "retry": false}
+  ],
+  "cost": {"kind": "local"},
+  "confirm": {"kind": "always"},
+  "effects": {"network": false, "writes": "new_bytes"},
+  "examples": [
+    {"args": {"file": "samples/out/mixed.pdf", "areas": [{"page": 1, "rects": [{"x": 54, "y": 724, "width": 66, "height": 16}]}]}, "expect": {"data": {"page_count": 10}}}
+  ],
+  "note": "要求 PDFium。加密文件先由用户授权导出无密码副本。"
+}

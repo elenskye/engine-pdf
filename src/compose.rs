@@ -25,7 +25,7 @@ pub struct Assembly {
     pub info: Option<InfoPatch>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize)]
 pub struct AssemblyLink {
     /// 输出文件中放置链接的物理页码，从 1 起。
     pub page: u32,

@@ -1,0 +1,40 @@
+{
+  "name": "pdf_mathpix_quote",
+  "title": "给 Mathpix 识别报价",
+  "description": "本地计算选中 PDF 页的 Mathpix 价格。确认是否上传前可先用这个工具。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "file": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"},
+      "pages": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"}, "maxItems": 200, "description": "原文件的物理页码。报价和上传均按升序去重。"}
+    },
+    "required": ["file", "pages"]
+  },
+  "result": "Markdown 列出实际选页、单价和预计总价。data 附页码数组、单价和共用报价字段。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "pages": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"}, "maxItems": 200, "description": ""},
+      "usd_per_unit": {"type": "number", "minimum": 0},
+      "service": {"type": "string"},
+      "unit": {"type": "string"},
+      "units": {"type": "number", "minimum": 0},
+      "usd": {"type": "number", "minimum": 0}
+    },
+    "required": ["pages", "usd_per_unit", "service", "unit", "units", "usd"]
+  },
+  "errors": [
+    {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},
+    {"kind": "damaged_pdf", "message": "这份 PDF 已损坏，打不开。", "hint": "请用原始文件或重新导出 PDF。", "retry": false},
+    {"kind": "password_action_required", "message": "Mathpix 需要无密码 PDF。", "hint": "请让用户决定是否导出无密码副本。", "retry": false},
+    {"kind": "locked", "message": "这份 PDF 加了密码，打不开。", "hint": "请让用户提供 PDF 的打开密码。", "retry": false},
+    {"kind": "wrong_password", "message": "PDF 密码不正确。", "hint": "请让用户重新提供 PDF 密码。", "retry": false}
+  ],
+  "cost": {"kind": "free"},
+  "confirm": {"kind": "never"},
+  "effects": {"network": false, "writes": "none"},
+  "examples": [
+    {"args": {"file": "samples/out/mixed.pdf", "pages": [8, 2, 8]}, "expect": {"data": {"pages": [2, 8], "usd": 0.01}}}
+  ],
+  "note": "默认每页 0.005 美元。报价与执行使用同一有效正单价。"
+}

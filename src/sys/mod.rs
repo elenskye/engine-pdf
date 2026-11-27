@@ -9,6 +9,8 @@ mod content;
 #[cfg(target_os = "macos")]
 mod edit;
 #[cfg(target_os = "macos")]
+mod find;
+#[cfg(target_os = "macos")]
 mod flatten;
 #[cfg(target_os = "macos")]
 mod forms;
@@ -46,6 +48,8 @@ pub(crate) use compose::images;
 #[cfg(target_os = "macos")]
 pub(crate) use edit::{apply, info, outline};
 #[cfg(target_os = "macos")]
+pub(crate) use find::scan_find;
+#[cfg(target_os = "macos")]
 pub(crate) use forms::fields;
 #[cfg(target_os = "macos")]
 pub(crate) use ocr::warm_up;
@@ -61,7 +65,7 @@ pub(crate) use unsupported::page_objects;
 mod unsupported;
 #[cfg(not(target_os = "macos"))]
 pub(crate) use unsupported::{
-    Pdf, annotations, apply, fields, images, info, outline, searchable, warm_up,
+    Pdf, annotations, apply, fields, images, info, outline, scan_find, searchable, warm_up,
 };
 
 #[cfg(feature = "samples")]

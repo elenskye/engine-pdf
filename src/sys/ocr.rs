@@ -19,11 +19,17 @@ use crate::{Error, ImageFormat, OcrBounds, OcrLine, OcrOptions};
 
 use super::render::{draw_page, white_bitmap};
 
+pub(super) enum Positions {
+    None,
+    Characters,
+    Search,
+}
+
 pub(super) fn recognize_page(
     page: &PDFPage,
     index: u32,
     options: &OcrOptions,
-    character_positions: bool,
+    positions: Positions,
 ) -> Result<Vec<Observation>, Error> {
     let (bitmap, display_size) = draw_page(page, index, ImageFormat::Gray, 2400)?;
     let image = CGBitmapContextCreateImage(Some(&bitmap)).ok_or(Error::Render { page: index })?;
@@ -55,7 +61,7 @@ pub(super) fn recognize_page(
         );
         let pdf = CGRectApplyAffineTransform(display, display_to_pdf);
         let mut spans = Vec::new();
-        if character_positions && visual.size.width > 0.0 {
+        if !matches!(positions, Positions::None) && visual.size.width > 0.0 {
             let mut utf16 = 0;
             let mut previous_end: f64 = 0.0;
             for (position, ch) in text.chars().enumerate() {
@@ -79,8 +85,13 @@ pub(super) fn recognize_page(
                 }
                 let start = (rect.origin.x - visual.origin.x) / visual.size.width;
                 let end = start + rect.size.width / visual.size.width;
-                // 相同或倒序的框无法单独定位字符，保留整行的文字和位置。
-                if spans.last().is_some_and(|&(left, _)| start <= left) {
+                // Vision 有时只给词框。查找可接受相邻字符共用同一框，写入文字层仍要求独立字框。
+                if spans.last().is_some_and(|&(left, right)| {
+                    let shared_word = matches!(positions, Positions::Search)
+                        && position == spans.len()
+                        && (start, end) == (left, right);
+                    start <= left && !shared_word
+                }) {
                     spans.clear();
                     break;
                 }

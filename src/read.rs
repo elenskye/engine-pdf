@@ -266,7 +266,7 @@ pub(crate) fn classify(
 }
 
 // 字符范围沿用 Pith 的乱码检查。
-fn text_quality(text: &str, garbled_min_fraction: f64) -> (usize, bool) {
+pub(crate) fn text_quality(text: &str, garbled_min_fraction: f64) -> (usize, bool) {
     let (mut total, mut bad) = (0, 0);
     for c in text.chars().filter(|c| !c.is_whitespace()) {
         total += 1;

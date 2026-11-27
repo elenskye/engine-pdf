@@ -1,8 +1,8 @@
 # ROADMAP
 
-最新 tag 为 **v0.6.0**。下一步 **v0.7.0 工具包 + `pdf_find`**（`decisions/0020`），Phase 计划已写，等站主看过；依赖 engine-core 的部分等它发 `v0.2.0`。之后 v0.8 接 Pomelo、v0.9 接 Pith。Peck（现 1.2.1，还没接引擎）建议等 v0.7 后照工具包接。
+最新 tag 为 **v0.6.0**。**v0.7.0 工具包 + `pdf_find`** 已审核、提交；engine-core v0.2.1 推上 GitHub 后改钉、打 tag（`HANDOFF.md`）。之后 v0.8 接 Pomelo、v0.9 接 Pith；Peck（还没接引擎）照工具包接。
 
-分工见 `docs/decisions/0001`：Codex 实施每个 Phase，Claude 审核、commit、打 tag。1.0.0 = 引擎完成（含 v0.5–v0.7 的能力）+ 三个 App 都接上并通过验收；engine-core 1.0 同时冻结。
+分工见 `CLAUDE.md`「二」：Codex 实施每个 Phase，本机 Claude 审核、commit、打 tag。1.0.0 = 引擎完成 + 三个 App 都接上并通过验收；engine-core 1.0 同时冻结。
 
 ## 版本表
 
@@ -14,20 +14,22 @@
 | v0.4.0 | 接 Peck（brief 的首轮验收在这一版） | Peck 为主，引擎补接口 | 引擎改动已发（tag `v0.4.0`）；Peck 还没接，可以开工 |
 | v0.5.0 | 页面与结构 + 预览级编辑：目录书签、页标签核对、页面管理、照片打包、拼 PDF、标注、表单、密码、PDF.js 编辑套件、试用页 | engine-pdf | 完成（tag `v0.5.2`） |
 | v0.6.0 | PDFium 级：可搜索扫描件、移动与删除文字图片、涂黑 | engine-pdf | 完成（tag `v0.6.0`） |
-| v0.7.0 | Agent 工具包（清单、调用入口、命令行、接线说明）+ `pdf_find`，钉 engine-core；人用的查找改走 find | engine-pdf | 计划已写，等批 |
+| v0.7.0 | Agent 工具包（清单、调用入口、命令行、接线说明）+ `pdf_find`，钉 engine-core；人用的查找改走 find | engine-pdf | 完成，tag 等 engine-core v0.2.1 推上去 |
 | v0.8.0 | 接 Pomelo（Pomelo 1.1.0）：换掉 Pomelo 的 PDF 代码、扫描件进知识库、检索带页图、Pub2MD、见字如面拼 PDF | Pomelo 为主，引擎补接口 | 计划已写，等批（原 v0.7） |
 | v0.9.0 | 接 Pith：取字、Mathpix、页标签、编辑套件进阅读器 | Pith 为主 | 大纲（原 v0.8） |
 | v1.0.0 | 完成体：冻结接口（Rust 和 `web/`），三个 App 钉 v1.0.0，全量回归 | 全部 | 大纲 |
 
-每一版都是「新增功能」：分 Phase，只在最后一个 Phase 收尾时打 tag（`CLAUDE.md`「版本」）。App 那边每次接入是它自己的一个版本，程度到时问站主（Pomelo 已定 1.1.0）。引擎为接入补的改动跟着当期版本发。v0.4.0 已先发，v0.5 可以开工；Peck 接入不再挡引擎的版本。
+每一版都是「新增功能」：分 Phase，只在最后一个 Phase 收尾时打 tag。App 那边每次接入是它自己的一个版本，程度到时问站主（Pomelo 已定 1.1.0）；引擎为接入补的改动跟着当期版本发。
 
-## v0.2.0 本机读取（完成）
+## 已完成的版本
 
-5 个 Phase：骨架 → 样本生成器 → 打开与取字 → 页图与分类 → 长文档取消与收尾。Codex 实施，Claude 审核时改了：短文字页的字不再丢（`NoText.partial`、只有几个字的页算 `Text`）、页图改画 CropBox、文件头前的杂字节容忍到 1024 字节、去掉还没用到的 OCR / Mathpix 错误种类、测试按主题重排。
+每版的接口变化见 `CHANGELOG.md`，选型见 `docs/decisions/`。都是 Codex 实施、本机 Claude 用真实文件审核后修正：
 
-## v0.3.0 识别（完成）
-
-5 个 Phase：Vision 单页识别 → 阅读顺序接进 `read` → Mathpix 客户端 → 页码映射 → 收尾。Codex 实施（含一次单页 Mathpix 真跑），Claude 审核时改了：OCR 阅读顺序改成递归切块，四栏杂志页不再串栏；仿扫描件工具从 Swift 脚本改成 `samples::scan` + `examples/make_scan`；Mathpix 响应加 1 GB 上限；`mathpix` 的流程拆到 `mathpix/job.rs`；又真跑了一次三页（空白、中文扫描、公式表格）验证映射。实测结论见 design §6。
+- **v0.2.0 本机读取**：审核时修了短文字页丢字、页图改画 CropBox、文件头前杂字节。
+- **v0.3.0 识别**：OCR 阅读顺序改成递归切块（四栏杂志不串栏）；Mathpix 响应加上限、流程拆到 `mathpix/job.rs`；真跑两次验页码映射（design §6）。
+- **v0.5.0 页面与结构 + 预览级编辑**（tag `v0.5.2`）：写入从 PDFKit 整份重写改成 lopdf 在原对象上写（`decisions/0017`），修好知网论文、带结构树的论文、链接、页标签、表单字典；`sys/objects.rs` 修交叉引用表和缺 `/Length` 的流。
+- **v0.6.0 PDFium 级**：PDFium 改为只读，移动、删除、涂黑由 lopdf 只改那几条指令、交文件前核对（`decisions/0019`）；涂黑支持带结构树和知网论文；可搜索副本换页序、合并后识别文字跟着页走。
+- **v0.7.0 工具包 + pdf_find**（`decisions/0020`、`0021`，design §9）：5 个 Phase（清单草案和字框实验 → 接 engine-core → 调用入口和命令行 → `pdf_find` → 套件查找和收尾）。审核时用 39 份真实 PDF 独立核对字框（PDFium 取框内文字），改了：扫描页带几个字的页码、水印时照样识别（和 `read` 同一门槛）；engine-core 软连字符后跟空格被拼词（发 engine-core v0.2.1）；`pdf_edit` 的改动单清单写全每种字段；`pdf_read` 越界页直接报错；`pdf_find` 的 Markdown 中文不断行、按词时说明是哪几页；`pdf_objects` 带上文字内容；工具层类型挪到 `engine_pdf::tools` 下；`tools/find.rs` 单列。
 
 ## v0.4.0 接 Peck（计划）
 
@@ -58,35 +60,6 @@
 | 文字、扫描、空白混排；断网能识别 | `mixed` 逐页说法对 | 关 Wi-Fi 读 `mixed`，扫描页出字、空白页标空白 |
 | 只选第 8 页识别：确认框、取消零请求、只传一页、结果标第 8 页 | Peck 测试用 `FakeTransport` | 确认框显示第 8 页和 $0.005；点拒绝后没有请求；点允许后结果标第 8 页 |
 | 坏文件、加密文件提示明确；从安装包调用 | 引擎测试 | 正式版里读坏文件、加密文件看提示；读 PDF 时没有 `osascript` 子进程 |
-
-## v0.5.0 页面与结构 + 预览级编辑（完成）
-
-目标是 macOS「预览」的水准，另加目录书签、照片打包、拼 PDF（design §7，`decisions/0009`）。站主定的：编辑套件由引擎出、不带样式，各 App 用自己的设计系统画按钮；用引擎自带的试用页验收。
-
-6 个 Phase：实验与改动单 → 页面与结构 → 标注 → 表单与密码 → 编辑套件 → 试用页与收尾。Codex 实施，Claude 审核时用 38 份真实论文实测，改了：写入从「PDFKit 整份重写再补回」改成 lopdf 在原文件的对象上写（`decisions/0017`），修好知网论文无法编辑、带结构树的论文加不上标注、原有链接被删、页标签丢失、空表单字典挡住调页；新增 `sys/objects.rs`（交叉引用表修复、补回没有 `/Length` 的流，修好「预览」里中文文本框乱码）；文本框不再自动换行。v0.5.1、v0.5.2 是「预览」验收后的修正和 lopdf 加密。
-
-## v0.6.0 PDFium 级（完成）
-
-可搜索扫描件、移动与删除文字图片、涂黑（design §8，`decisions/0010`、`0018`、`0019`）。站主定的：PDFium 用预编译静态库、feature 默认关；可搜索扫描件走 Vision + lopdf，读回 `Content::SearchableText`；涂黑在普通编辑之后、允许整页位图后备、有共享图像泄露风险就拒绝。
-
-5 个 Phase：实验 → 可搜索扫描件 → 移动与删除 → 涂黑 → 收尾。Codex 实施，Claude 审核时用 38 份真实论文和站主的扫描件实测，改了：
-
-- **PDFium 改为只读**（`decisions/0019`）：PDFium 整页重写会丢字距、丢整段内容（XGBoost 第 2 页右栏下半截消失），涂黑也受牵连。改成 lopdf 只改那几条指令（`sys/content.rs`），交文件前核对改动区以外的画面和文字不变（`sys/check.rs`）。实测移动 38/38、涂黑 38/38 成功，编辑区外画面和文字不变、框里零漏字。
-- **涂黑**：带结构树的论文、知网论文原来一律拒绝，现在能涂（`sys/tags.rs` 去掉结构树里的替代文字）；只沾到框边的字和穿过框的线条不再触发整页位图；整页位图补回的搜索层只丢框里的字，不再丢整行；整页位图的黑白页存灰度图。
-- **可搜索副本**：换页序、合并后识别文字跟着页走。
-- 试用页去掉没有作用的「对象编辑会话」：对象编号只由文件内容决定。
-
-## v0.7.0 Agent 工具包 + pdf_find（计划，等批）
-
-依据 `decisions/0020`、`CLAUDE.md`「一」（总仓库 `GUIDE.md`、`docs/decisions/0003`、`0004`）。engine-core 在 `../engine-core`，Phase 2 起钉它的 `v0.2.0`；它没发之前只做 Phase 1。
-
-| Phase | 做什么 | 做完的样子 |
-| --- | --- | --- |
-| 1 工具清单草案 + 字框实验 | design §9 写工具清单草案，覆盖现有每项能力：`pdf_info`、`pdf_read`（文字 + 页图附件 + 可选 OCR）、`pdf_render`、`pdf_ocr`、`pdf_mathpix_quote` / `pdf_mathpix`（每次确认）、`pdf_outline`、`pdf_annotations`、`pdf_fields`、`pdf_objects`、`pdf_edit`（改动单）、`pdf_redact`（单列，每次确认）、`pdf_searchable`、`pdf_compose_images`、`pdf_assemble`、`pdf_split`、`pdf_find`。每个写参数（JSON Schema、默认值、上限）、结果（Markdown 在前、结构化随附、长了怎么接着取）、出错（中文、下一步、能否重试）、费用、确认、影响（只读 / 交回新字节）、例子。实验：文字层页的字和字框怎么取（PDFKit 字框下标和文字串对不上，`0019` 审核记录；比 PDFKit 选区和 PDFium，后者要不要从可选变成默认）；扫描页用存下的识别结果还是现做 OCR | 站主看过清单草案；字框取法定下来写进 `decisions` |
-| 2 接 engine-core | `Cargo.toml` 钉 engine-core `v0.2.0`；`Cancel`、错误和费用约定换成它的类型，engine-pdf 再导出，对外接口不变（现有测试照过）；`Error` 映射到它的错误种类（中文、下一步、能否重试） | App 原来的调用不用改；`check.sh` 三种配置过 |
-| 3 调用入口 + 命令行 | `src/tools/`：按草案落成清单，`tools::manifest()`、`tools::call(名字, 参数, 上下文)`；页图作附件；`src/bin/engine-pdf`：`tools`、`describe`、`call`，Mathpix 不加 `--yes` 只报价；每个工具的例子跑成测试；`docs/toolkit.md`（App 交什么、能覆盖什么、三家怎么接） | 终端里能跑通每个免费工具；Mathpix 只报价不发请求（模拟服务测）；覆盖（改说明、收紧上限、关掉、改确认）有测试 |
-| 4 pdf_find | 按 engine-core 的 `Query`、`Hit`、`Found`：位置 = 物理页码 + 页标签 + 命中处的框；整句 → 按词（同一页）；扫描页来源标 OCR；上限和 `truncated`；归一化全用 engine-core | 样本和真实论文（知网、连字、断词、全角、简繁、扫描页）都找得到，框落在原字上（独立用 pypdfium2 核对） |
-| 5 套件查找改走 find + 收尾 | `web/` 的查找条改调 find（App 交结果，套件按框高亮、跳页）；试用页接上；README、design、CHANGELOG、HANDOFF；真实论文批量核对 | `check.sh` 过；试用页里搜中英文和扫描页都对；打 tag `v0.7.0` |
 
 ## v0.8.0 接 Pomelo（计划，原 v0.7）
 
@@ -124,6 +97,6 @@ brief 留给计划定的（Claude 定）：Mathpix 转 Word、LaTeX 搬进引擎
 - [x] v0.5.0 页面和目录（2026-11-26 Claude 代验；修了试用页新目录项指向页底）。在试用页删一页、转一页、把另一份 PDF 插到中间，添加一项目录。用「预览」核对页序、旋转、目录及内部链接。
 - [x] v0.5.0 表单和密码（2026-11-26：Claude 验填值、「预览」要密码、去密码和烧平；站主在 Chrome 输密码后四个值都对。Edge 新版阅读器不显示加密表单的控件，是 Edge 的限制，站主定不处理）。
 - [x] v0.6.0（2026-11-27 Claude 代验）：试用页里拖动、删除、涂黑一篇真实论文，把中文扫描件转成可搜索副本；「预览」里搜得到扫描页的字、高亮落在原字上；全选复制涂黑副本，剪贴板里没有框里的字。
-- [ ] v0.7.0：在终端跑 `engine-pdf tools` 和几个 `call`（读一页、找一句中文、找扫描页上的字），看说明和结果读起来顺不顺；Mathpix 不加 `--yes` 只报价。在试用页查找条里搜，高亮落在对的字上。
+- [ ] v0.7.0：在终端跑 `engine-pdf tools` 和几个 `call`（读一页、找一句中文、找扫描页上的字），看说明和结果读起来顺不顺；Mathpix 不加 `--yes` 只报价。在试用页查找条里搜，高亮落在对的字上（2026-11-27 Claude 已代跑一遍，见 `HANDOFF.md`）。
 - [ ] v0.8.0：Pomelo 正式版里 ① 扫描 PDF 进知识库后能搜到、引用带页码 ② 柚子引用 PDF 段落时云端模型能说出那一页图表的内容 ③ Pub2MD 原页图和以前看起来一样（知网文件边缘少一截除外）④ 见字如面导出的 PDF 链接、目录、标题都在。
 - [ ] v0.9.0：Pith 里一条来自扫描论文的引用，点回去落在阅读器的同一页。

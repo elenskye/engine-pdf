@@ -2,6 +2,14 @@
 
 记录各版本的公共接口变化和 App 升级事项。
 
+## v0.7.0
+
+- **工具包**：17 个工具（`tools/*.json`），`tools::manifest`、`tools::call`、`tools::toolkit_with_mathpix`，命令行 `engine-pdf tools / describe / call`。App 按工具名覆盖说明、默认值、上限、确认或关掉；页图和新文件作附件；Mathpix 先报价、每次确认才联网。接线见 `docs/toolkit.md`。
+- **查找**：`find::find` 和 `pdf_find`。归一化来自 engine-core（简繁、全角半角、连字、断词、软连字符）；没有整句时按同页共现的词找；交回原文、物理页码、页标签、按行的坐标框、来源（原文 / 本机识别）。扫描页复用可搜索层或现做 Vision，判断「是不是扫描页」和 `read` 同一门槛。
+- **Web**：`ViewerOptions.search(query, signal)` 接 App 的查找结果；`EditorViewer.find` 改成异步，按框高亮、跳页；`onFind` 多了第三个参数 `{ pending, result }`，前两个不变。不再用 PDF.js 自带的查找。
+- **Rust**：钉 engine-core v0.2.1（开发期 `[patch]` 指本机，见 `HANDOFF.md`）。`Cancel` 改由 engine-core 导出，用法不变；工具层类型在 `engine_pdf::tools` 下（`ToolError`、`Quote`、`Usage` 等），`Error`、`mathpix::Failure` 能转成 `ToolError`。原有接口不变。
+- **App 升级要改的**：Rust 不用改；用了 Web 套件查找的，传 `search`、`await` 新的 `find`、自己写高亮样式。
+
 ## v0.6.0
 
 - **可搜索扫描件**：`searchable(doc, pages, opts, cancel, progress)` 用 Vision 本机识别选中的扫描页，lopdf 写入不可见文字层（字和扫描图上的字对齐）。选页用原始物理页码；已有文字层的页跳过。加密文件先用权限密码打开，经 `edit::apply` 去密码。不需要 `pdfium`。

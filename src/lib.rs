@@ -2,11 +2,11 @@
 //!
 //! 接口按 `ROADMAP.md` 的 Phase 实现，设计见 `docs/design.md`。
 
-mod cancel;
 pub mod compose;
 mod document;
 pub mod edit;
 mod error;
+pub mod find;
 pub mod mathpix;
 pub mod ocr;
 pub mod pages;
@@ -14,9 +14,10 @@ mod read;
 #[cfg(feature = "samples")]
 pub mod samples;
 mod sys;
+pub mod tools;
 
-pub use cancel::Cancel;
 pub use document::{Document, Image, ImageFormat};
+pub use engine_core::Cancel;
 pub use error::Error;
 pub use ocr::{OcrBounds, OcrLine, OcrOptions, OcrReason, OcrText, searchable};
 pub use read::{
@@ -30,6 +31,6 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 mod tests {
     #[test]
     fn version_matches_manifest() {
-        assert_eq!(super::VERSION, "0.6.0");
+        assert_eq!(super::VERSION, "0.7.0");
     }
 }

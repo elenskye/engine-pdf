@@ -1,13 +1,14 @@
 # engine-pdf
 
-Peck、Pith、Pomelo 共用的 Mac PDF 引擎。Rust 库负责读取、识别和保存编辑结果，`web/` 提供无样式的 PDF.js 编辑套件。界面、文件权限、业务数据、费用确认和记账由各 App 管理。
+Peck、Pith、Pomelo 共用的 Mac PDF 引擎。Rust 库负责读取、查找、识别和保存编辑结果，`web/` 提供无样式的 PDF.js 查找和编辑套件。界面、文件权限、业务数据、费用确认和记账由各 App 管理。
 
-> 最新 tag 为 **v0.6.0**。本地放在引擎总仓库 `personal-engine-studio/` 下，是独立的 git 仓库。进度见 `ROADMAP.md`，交接见 `HANDOFF.md`。
+> 本文对应 v0.7.0（最新已发 tag 是 v0.6.0，v0.7.0 等 engine-core v0.2.1 推上去后打）。本地放在引擎总仓库 `personal-engine-studio/` 下，是独立的 Git 仓库。进度见 [ROADMAP.md](ROADMAP.md)，交接见 [HANDOFF.md](HANDOFF.md)。
 
 ## 能做什么
 
 - **打开**：路径或字节；损坏、要密码、不是 PDF 都有明确的错。
 - **取字**：逐页取文字层，每页标明是原文、空白、没取到字（扫描页、图）还是读失败；只有几个字的页，字也交回去。页码是原文件的物理页码，另给页标签。
+- **查找**：`find::find`（工具 `pdf_find`）和阅读器的查找条用同一套匹配：简繁、全角半角、连字、行尾断词都能找到，整句没有时按同页的词找。交回原文、物理页码、页标签和每行的坐标框；扫描页用可搜索层或本机 Vision 现做识别。
 - **页图**：逐页读取时默认每页都附一张 1568px 的 JPEG（空白页、读失败的页除外），看不看由模型决定；任意页也能单独画成 JPEG、PNG 或灰度像素，范围和阅读器看到的一样（CropBox、带旋转）。
 - **拆页**：把指定页复制成一份新 PDF（给 Mathpix 只传这几页用）；统计哪些页有图片。
 - **本机 OCR**：扫描页在本机用 macOS Vision 识别，断网也行；简体、繁体、英文，两栏、多栏按阅读顺序拼好，另给每行的置信度和位置。`read` 里开 `Ocr::auto()` 就会自动识别没有文字层的页。
@@ -21,16 +22,28 @@ Peck、Pith、Pomelo 共用的 Mac PDF 引擎。Rust 库负责读取、识别和
 
 ## App 怎么引用
 
-钉住一个 tag（`docs/decisions/0002`）：
+钉住已发布的 tag（`docs/decisions/0002`）。v0.7.0 对应以下配置。
 
 ```toml
 [dependencies]
-engine-pdf = { git = "https://github.com/elenskye/engine-pdf", tag = "v0.6.0" }
+engine-pdf = { git = "https://github.com/elenskye/engine-pdf", tag = "v0.7.0" }
 ```
 
 升级改 tag，回退改回上一个 tag。每版接口变化见 `CHANGELOG.md`。
 
 接入 Web 编辑器的 App 从同一个引擎 tag 构建离线包。`pnpm --dir web install --frozen-lockfile` 安装构建依赖，`pnpm --dir web build` 生成模块和声明，`pnpm --dir web pack` 生成可用 `pnpm add <包路径>` 安装的包。App 提供 `pdfjs-dist` 6.5（已验 6.5.438）、`pdf_viewer.css` 及 worker 等本地资源。挂载和改动单接口见 `docs/design.md` §7.5。
+
+## 工具包和命令行
+
+上面每项能力都是一个给模型用的工具（`tools/*.json`，共 17 个）。`engine_pdf::tools::manifest()` 给清单，`tools::call` 按名字调用；App 怎么交文件、密码、确认和价格见 [工具包接线说明](docs/toolkit.md)。
+
+```bash
+cargo run --bin engine-pdf -- tools
+cargo run --bin engine-pdf -- describe pdf_find
+cargo run --bin engine-pdf -- call pdf_find '{"file":"samples/out/mixed.pdf","pages":"2","query":"quiet valley"}'
+```
+
+先用下文命令生成样本。Mathpix 在 CLI 中默认只报价，带 `--yes` 才上传选中的页。
 
 ## 开发
 
@@ -54,8 +67,9 @@ cargo run --features samples --example make_samples
 cargo run --release --example studio -- samples/out/mixed.pdf
 ```
 
-用浏览器打开终端打印的 `127.0.0.1` 地址。也可省略 PDF 路径，再在页面中选择文件。保存后自动打开 `local/studio/` 下的新副本。
+用浏览器打开终端打印的 `127.0.0.1` 地址（要固定端口就设 `ENGINE_PDF_STUDIO_PORT`）。也可省略 PDF 路径，再在页面中选择文件。保存后自动打开 `local/studio/` 下的新副本。
 
+- 输入关键词后按 Enter 或点「查找」，上一个和下一个在本次结果间跳转。用 `mixed.pdf` 查「記錄清晨」和 `quiet valley`，可分别看到中文原文和本机 OCR 高亮。
 - 「生成可搜索副本」用本机 Vision 识别指定物理页。用 `mixed.pdf` 试第 2 页，保存后可查找 `quiet valley`。有未保存编辑时，先保存并在重开的副本上选页。加密 PDF 需先用权限密码保存一份去密码的副本。
 - 「选对象」点选、框选、拖动或删除文字和图片；「涂黑」画草稿框，保存前确认。这两项要开 `pdfium`：
 

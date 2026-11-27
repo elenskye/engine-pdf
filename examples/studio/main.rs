@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use engine_pdf::edit::{self, Lock, Permissions, Plan, Save};
-use engine_pdf::{Cancel, Document, Error, OcrOptions, pages, searchable};
+use engine_pdf::{Cancel, Document, Error, OcrOptions, find, pages, searchable};
 use serde::Deserialize;
 use zeroize::Zeroizing;
 
@@ -25,6 +25,7 @@ struct Request {
     passwords: Vec<Option<Zeroizing<String>>>,
     page: u32,
     page_spec: Option<String>,
+    query: Option<String>,
     plan: Plan,
     save: SaveRequest,
 }
@@ -64,7 +65,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     let initial = source.map(fs::read).transpose()?;
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+    // 默认随机端口；要固定地址（书签、预览工具）时设 ENGINE_PDF_STUDIO_PORT。
+    let port = std::env::var("ENGINE_PDF_STUDIO_PORT")
+        .ok()
+        .and_then(|port| port.parse().ok())
+        .unwrap_or(0);
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port))?;
     let authority = listener.local_addr()?.to_string();
     println!("试用页：http://{authority}/");
     for stream in listener.incoming() {
@@ -142,7 +148,7 @@ fn serve(stream: &mut TcpStream, authority: &str, initial: Option<&[u8]>) -> io:
     };
     let mut body = Zeroizing::new(vec![0; length]);
     input.read_exact(&mut body)?;
-    match handle(&path, &body) {
+    match handle(&path, &body, input.get_ref()) {
         Ok((bytes, output)) => reply(
             input.get_mut(),
             "200 OK",
@@ -172,7 +178,7 @@ fn open_pdf(bytes: &[u8], password: Option<&Zeroizing<String>>) -> Result<Docume
     .map_err(|error| error.to_string())
 }
 
-fn handle(path: &str, body: &[u8]) -> Result<(Vec<u8>, Option<String>), String> {
+fn handle(path: &str, body: &[u8], peer: &TcpStream) -> Result<(Vec<u8>, Option<String>), String> {
     let format = || "请求格式有误。".to_owned();
     let length = u32::from_le_bytes(body.get(..4).ok_or_else(format)?.try_into().unwrap()) as usize;
     let (head, mut bytes) = body[4..].split_at_checked(length).ok_or_else(format)?;
@@ -215,6 +221,31 @@ fn handle(path: &str, body: &[u8]) -> Result<(Vec<u8>, Option<String>), String> 
                 serde_json::to_vec(&annotations).map_err(|_| format())?,
                 None,
             ))
+        }
+        "/api/find" if others.is_empty() => {
+            let mut query = find::Query::new(request.query.ok_or_else(format)?);
+            query.max_hits = 100;
+            let selected: Vec<_> = (1..=doc.page_count()).collect();
+            let socket_error = |_| "无法检查查找连接。".to_owned();
+            peer.set_nonblocking(true).map_err(socket_error)?;
+            let found = find::find(
+                &doc,
+                &selected,
+                &query,
+                &find::Options::default(),
+                &cancel,
+                &|_, _| {
+                    // 浏览器中止请求后，下一个页面边界即可结束本机查找。
+                    match peer.peek(&mut [0_u8; 1]) {
+                        Ok(0) => cancel.cancel(),
+                        Err(error) if error.kind() != io::ErrorKind::WouldBlock => cancel.cancel(),
+                        _ => {}
+                    }
+                },
+            );
+            peer.set_nonblocking(false).map_err(socket_error)?;
+            let found = found.map_err(|error| error.to_string())?;
+            Ok((serde_json::to_vec(&found).map_err(|_| format())?, None))
         }
         // 对象编号只由文件字节决定：同一份字节每次列出的编号都一样，保存时再打开也对得上。
         "/api/objects" if others.is_empty() => {

@@ -88,6 +88,15 @@ fn freezes_quote_uploads_only_selected_pages_and_retries_pending_zip() {
     assert_eq!(quote.price_per_page(), 0.0125);
     assert_eq!(quote.usd(), 0.025);
     assert_eq!(quote.service(), "Mathpix");
+    assert_eq!(
+        engine_pdf::tools::Quote::from(&quote),
+        engine_pdf::tools::Quote {
+            service: "Mathpix".into(),
+            unit: "page".into(),
+            units: 2.0,
+            usd: 0.025,
+        },
+    );
     assert!(fake.requests().is_empty());
 
     let keys = Keys::new("test-app", "test-key-not-for-recording");
@@ -99,6 +108,7 @@ fn freezes_quote_uploads_only_selected_pages_and_retries_pending_zip() {
         matches!(&expired.error, Error::Mathpix(error) if error.kind == MathpixErrorKind::Timeout)
     );
     assert_eq!(expired.usage.usd, 0.0);
+    assert!(engine_pdf::tools::ToolError::from(expired).usage.is_none());
     assert!(fake.requests().is_empty());
     options.max_wait = max_wait;
 
@@ -116,6 +126,16 @@ fn freezes_quote_uploads_only_selected_pages_and_retries_pending_zip() {
     assert_eq!(recognized.usage.usd, 0.025);
     assert!(!recognized.usage.estimated);
     assert_eq!(recognized.usage.remote_deleted, Some(true));
+    assert_eq!(
+        engine_pdf::tools::Usage::from(&recognized.usage),
+        engine_pdf::tools::Usage {
+            service: "Mathpix".into(),
+            unit: "page".into(),
+            units: 2.0,
+            usd: 0.025,
+            estimated: false,
+        },
+    );
 
     let requests = fake.requests();
     assert_eq!(
@@ -302,6 +322,11 @@ fn run_returns_usage_and_deletes_after_processing_errors_and_timeouts() {
         assert_eq!(failure.usage.usd, 0.005);
         assert!(failure.usage.estimated);
         assert_eq!(failure.usage.remote_deleted, Some(delete_status == 204));
+        let usage = engine_pdf::tools::ToolError::from(failure).usage.unwrap();
+        assert_eq!(
+            (usage.units, usage.usd, usage.estimated),
+            (1.0, 0.005, true)
+        );
         assert_eq!(fake.requests().last().unwrap().method, Method::Delete);
     }
 }

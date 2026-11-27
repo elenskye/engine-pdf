@@ -1,0 +1,56 @@
+{
+  "name": "pdf_objects",
+  "title": "列出 PDF 页面对象（需 PDFium）",
+  "description": "列出指定物理页上的文字、图片、路径等对象，返回编辑会用到的对象编号。修改后的 PDF 要重新列编号。需要启用 PDFium。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "file": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"},
+      "page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"},
+      "offset": {"type": "integer", "minimum": 0, "maximum": 4294967295, "default": 0, "description": "从第几个条目接着取，第一条为 0。"},
+      "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}
+    },
+    "required": ["file", "page"]
+  },
+  "result": "Markdown 列对象编号、类型和位置。data 附编号、类型、坐标框、可用文字及总条数。还有条目时，Output.next 带原参数和新的 offset，可直接接着取。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"},
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "页内对象编号，从 1 起，供 pdf_edit 的 objects 使用。"},
+            "kind": {"type": "string"},
+            "bounds": {
+              "type": "object",
+              "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "width": {"type": "number", "minimum": 0}, "height": {"type": "number", "minimum": 0}},
+              "required": ["x", "y", "width", "height"],
+              "description": "原 PDF 坐标。单位 pt，左下原点，保留 CropBox 偏移。"
+            },
+            "text": {"type": "string"}
+          },
+          "required": ["id", "kind", "bounds"]
+        },
+        "maxItems": 100
+      },
+      "total": {"type": "integer", "minimum": 0, "maximum": 4294967295}
+    },
+    "required": ["page", "items", "total"]
+  },
+  "errors": [
+    {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},
+    {"kind": "damaged_pdf", "message": "这份 PDF 已损坏，打不开。", "hint": "请用原始文件或重新导出 PDF。", "retry": false},
+    {"kind": "locked", "message": "这份 PDF 加了密码，打不开。", "hint": "请让用户提供 PDF 的打开密码。", "retry": false},
+    {"kind": "wrong_password", "message": "PDF 密码不正确。", "hint": "请让用户重新提供 PDF 密码。", "retry": false},
+    {"kind": "pdfium_unavailable", "message": "当前引擎未启用 PDFium 编辑。", "hint": "请使用启用了 PDFium 的 Mac 构建。", "retry": false}
+  ],
+  "cost": {"kind": "local"},
+  "confirm": {"kind": "never"},
+  "effects": {"network": false, "writes": "none"},
+  "examples": [
+    {"args": {"file": "samples/out/mixed.pdf", "page": 1}, "expect": {"contains": "文字"}}
+  ]
+}

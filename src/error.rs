@@ -139,6 +139,111 @@ impl From<io::Error> for Error {
     }
 }
 
+impl From<engine_core::Cancelled> for Error {
+    fn from(_: engine_core::Cancelled) -> Self {
+        Self::Cancelled
+    }
+}
+
+impl From<Error> for engine_core::call::ToolError {
+    fn from(error: Error) -> Self {
+        use crate::mathpix::MathpixErrorKind as Mathpix;
+
+        let (kind, hint, retry) = match &error {
+            Error::NotPdf => ("not_pdf", "请换一份 PDF。", false),
+            Error::Damaged => ("damaged_pdf", "请用原始文件或重新导出 PDF。", false),
+            Error::Locked => ("locked", "请让用户提供 PDF 的打开密码。", false),
+            Error::WrongPassword => ("wrong_password", "请让用户重新提供 PDF 密码。", false),
+            Error::OwnerPasswordRequired => (
+                "owner_password_required",
+                "请让用户提供 PDF 的权限密码，再执行本次操作。",
+                false,
+            ),
+            Error::PasswordActionRequired => (
+                "password_action_required",
+                "请让用户明确选择输出的加密方式。",
+                false,
+            ),
+            Error::PageOutOfRange { .. } | Error::BadPageSpec(_) => {
+                ("bad_args", "请按原文件的物理页码选择页面。", false)
+            }
+            Error::Render { .. } => ("render_failed", "请尝试读取文字或换一个页码。", false),
+            Error::Ocr { .. } => ("ocr_failed", "请检查页图，或缩小识别范围。", false),
+            Error::ImageInput { .. } | Error::InvalidStampImage => {
+                ("invalid_image", "请换一张可打开的图片，再提交改动。", false)
+            }
+            Error::AnnotationNotFound | Error::FieldNotFound | Error::ObjectNotFound { .. } => (
+                "item_not_found",
+                "请从同一份 PDF 重新列出标注、字段或页面对象，再选取要改的项目。",
+                false,
+            ),
+            Error::PdfiumUnavailable => (
+                "pdfium_unavailable",
+                "请使用启用了 PDFium 的 Mac 构建。",
+                false,
+            ),
+            Error::ObjectNotEditable { .. } | Error::ObjectEditFailed { .. } => (
+                "object_edit_failed",
+                "请缩小改动范围，或改用 PDF 编辑器处理这一页。",
+                false,
+            ),
+            Error::RedactionFailed { .. } | Error::RedactionSharedImage { .. } => (
+                "redaction_failed",
+                "请核对区域和其他出现位置，调整范围后重新确认。",
+                false,
+            ),
+            Error::SaveFailed | Error::EditTextChanged { .. } => (
+                "save_failed",
+                "请缩小改动范围，或换一份 PDF 重新操作。",
+                false,
+            ),
+            Error::FormEditUnavailable => (
+                "form_edit_unavailable",
+                "请让用户决定是否烧平表单，再调整页面。",
+                false,
+            ),
+            Error::UnsupportedForm | Error::FieldReadOnly | Error::Unsupported => {
+                ("unsupported", "请换一种处理方式。", false)
+            }
+            Error::InvalidPasswordOptions
+            | Error::EmptyImages
+            | Error::EmptyAssembly
+            | Error::InvalidSource { .. }
+            | Error::InvalidRotation { .. }
+            | Error::InvalidTarget
+            | Error::InvalidGeometry
+            | Error::InvalidFieldValue => ("bad_args", "请按工具说明改参数后重试。", false),
+            Error::Cancelled => ("cancelled", "需要时可重新调用。", true),
+            Error::Io(_) => ("file", "请检查文件和访问权限，或换一份文件。", false),
+            Error::Mathpix(error) => match error.kind {
+                Mathpix::Network => ("network", "请检查连接。已有任务时先恢复原任务。", true),
+                Mathpix::Timeout => ("timeout", "已有任务时先查任务状态，再决定是否重试。", true),
+                Mathpix::RateLimited => ("rate_limited", "请稍等片刻再试。", true),
+                Mathpix::Auth => ("auth", "请让用户检查 Mathpix 密钥。", false),
+                Mathpix::Quota => ("quota", "请让用户检查 Mathpix 余额和额度。", false),
+                Mathpix::TooLarge => ("too_large", "请减少选中的物理页数。", false),
+                Mathpix::InvalidOptions => ("bad_args", "请检查调用设置。", false),
+                Mathpix::Service | Mathpix::InvalidResponse => {
+                    ("service", "已有任务时先查任务状态，再决定是否重试。", true)
+                }
+                Mathpix::Processing => {
+                    ("mathpix_processing", "请检查页图，或改用本机识别。", false)
+                }
+                Mathpix::ResultMissing => (
+                    "mathpix_result_missing",
+                    "请先检查原任务的识别结果是否已生成。",
+                    true,
+                ),
+            },
+        };
+        let message = match &error {
+            Error::BadPageSpec(_) => "指定的 PDF 页码范围无效。".into(),
+            _ => error.to_string(),
+        };
+        Self::new(kind, message, hint, retry)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,5 +254,29 @@ mod tests {
             Error::from(io::Error::other("/private/test.pdf")).to_string(),
             "读不了这个文件。"
         );
+    }
+
+    #[test]
+    fn tool_error_omits_untrusted_details_and_keeps_remediation() {
+        use crate::mathpix::{MathpixError, MathpixErrorKind};
+        use engine_core::call::ToolError;
+
+        let bad_pages = ToolError::from(Error::BadPageSpec("/private/test.pdf".into()));
+        assert_eq!(bad_pages.kind, "bad_args");
+        assert!(!bad_pages.retry);
+        assert!(
+            !serde_json::to_string(&bad_pages)
+                .unwrap()
+                .contains("/private")
+        );
+
+        let timeout = ToolError::from(Error::Mathpix(MathpixError {
+            kind: MathpixErrorKind::Timeout,
+            detail: Some("private cloud response".into()),
+        }));
+        assert_eq!(timeout.kind, "timeout");
+        assert!(timeout.retry);
+        assert!(timeout.hint.contains("任务状态"));
+        assert_eq!(timeout.message, "等待 Mathpix 超时。");
     }
 }

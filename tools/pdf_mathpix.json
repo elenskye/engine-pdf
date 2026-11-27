@@ -1,0 +1,45 @@
+{
+  "name": "pdf_mathpix",
+  "title": "用 Mathpix 识别 PDF",
+  "description": "用 Mathpix 识别选中的 PDF 页，适合公式和复杂排版。执行前按实际选页报价，默认每次确认，仅上传这些页。加密 PDF 请先由用户授权导出无密码副本。",
+  "params": {
+    "type": "object",
+    "properties": {
+      "file": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"},
+      "pages": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"}, "maxItems": 200, "description": "原文件的物理页码。报价和上传均按升序去重。"},
+      "lines": {"type": "boolean", "default": false, "description": "附 Mathpix 行数据。"},
+      "mmd_zip": {"type": "boolean", "default": false, "description": "另附 MMD 压缩包和其中的裁图。"}
+    },
+    "required": ["file", "pages"]
+  },
+  "result": "Markdown 按物理页给出识别摘要。data 附页码、映射方式、任务标识与远端删除结果。完整 MMD 和请求的行数据及 ZIP 作附件。成功和已记账的失败均附共用用量。",
+  "result_schema": {
+    "type": "object",
+    "properties": {
+      "pages": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"}, "maxItems": 200, "description": ""},
+      "mapping": {"type": "string", "enum": ["exact", "approximate"]},
+      "pdf_id": {"type": "string"},
+      "remote_deleted": {"type": "boolean"},
+      "mmd_attachment": {"type": "string"},
+      "lines_attachment": {"type": "string"},
+      "zip_attachment": {"type": "string"}
+    },
+    "required": ["pages", "mapping", "pdf_id", "remote_deleted", "mmd_attachment"]
+  },
+  "errors": [
+    {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},
+    {"kind": "damaged_pdf", "message": "这份 PDF 已损坏，打不开。", "hint": "请用原始文件或重新导出 PDF。", "retry": false},
+    {"kind": "password_action_required", "message": "Mathpix 需要无密码 PDF。", "hint": "请让用户决定是否导出无密码副本。", "retry": false},
+    {"kind": "locked", "message": "这份 PDF 加了密码，打不开。", "hint": "请让用户提供 PDF 的打开密码。", "retry": false},
+    {"kind": "wrong_password", "message": "PDF 密码不正确。", "hint": "请让用户重新提供 PDF 密码。", "retry": false},
+    {"kind": "mathpix_processing", "message": "Mathpix 没能识别这份文件。", "hint": "请检查页图，或改用本机识别。", "retry": false},
+    {"kind": "mathpix_result_missing", "message": "Mathpix 的识别结果暂不可用。", "hint": "请先检查原任务的识别结果是否已生成。", "retry": true}
+  ],
+  "cost": {"kind": "metered", "service": "Mathpix", "unit": "page", "usd_per_unit": 0.005},
+  "confirm": {"kind": "always"},
+  "effects": {"network": true, "writes": "none"},
+  "examples": [
+    {"args": {"file": "samples/out/mixed.pdf", "pages": [8, 2, 8]}, "expect": {"data": {"pages": [2, 8], "mapping": "exact"}}}
+  ],
+  "note": "Mathpix 接收 PDF 页内容。报价单价须大于 0。示例走模拟传输。"
+}
