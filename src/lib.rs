@@ -7,6 +7,8 @@ mod document;
 pub mod edit;
 mod error;
 pub mod find;
+#[cfg(target_os = "macos")]
+mod ligatures;
 pub mod mathpix;
 pub mod ocr;
 pub mod pages;

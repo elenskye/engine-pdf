@@ -1,5 +1,7 @@
 #[cfg(target_os = "macos")]
 mod annotation;
+#[cfg(target_os = "macos")]
+mod cache;
 #[cfg(all(target_os = "macos", feature = "pdfium"))]
 mod check;
 #[cfg(target_os = "macos")]
@@ -16,6 +18,8 @@ mod flatten;
 mod forms;
 #[cfg(target_os = "macos")]
 mod image_counts;
+#[cfg(target_os = "macos")]
+mod layer;
 #[cfg(target_os = "macos")]
 mod objects;
 #[cfg(target_os = "macos")]

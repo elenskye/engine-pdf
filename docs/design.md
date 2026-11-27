@@ -327,20 +327,20 @@ Pomelo 上传 Word 用 `mathpix::submit_file(bytes, mime, estimated_pages, &keys
 
 ## 4. 三个 App 怎么迁移
 
-共通：每个 App 的接入是它自己的一个版本（程度届时问站主），在它自己的仓库里改、守它自己的规矩；`Cargo.toml` 加 `engine-pdf = { git = "https://github.com/elenskye/engine-pdf", tag = "v0.4.0" }`（`decisions/0002`）。**回退**两层：引擎有问题 → App 把 tag 改回上一版、发一个小版本；接入本身有问题 → 装回 App 的上一版正式版，或 `git revert` 接入那几笔 commit。不在 App 里留新旧两套的运行时开关（多一套就多一份要维护的重复实现）。
+共通：每个 App 的接入是它自己的一个版本（程度届时问站主），在它自己的仓库里改、守它自己的规矩；`Cargo.toml` 钉当时最新的 tag（`decisions/0002`）。给模型的 PDF 工具一律照工具包接（`docs/toolkit.md`）：工具名、结果格式用引擎的，要改说明、默认值、上限、确认方式按工具名覆盖；后台流水线（建索引、Pub2MD）用 Rust 接口。Phase 计划在 `ROADMAP.md`。**回退**两层：引擎有问题 → App 把 tag 改回上一版、发一个小版本；接入本身有问题 → 装回 App 的上一版正式版，或 `git revert` 接入那几笔 commit。不在 App 里留新旧两套的运行时开关（多一套就多一份要维护的重复实现）。
 
-### 4.1 Peck（第一个接）
+### 4.1 Peck（1.4.0）
 
 | 入口 | 现在 | 换成 |
 | --- | --- | --- |
-| `harness/tools/pdf.rs` 的 `pdfkit()`（JXA）、`page_count`、`read_pages`、`has_text`、`split` | osascript 子进程 | `Document`、`read`；`split` 删掉（引擎的 Mathpix 自己拆） |
-| `parse_pages` | Peck 自己的 | `engine_pdf::pages::parse`（同一段代码搬过去的） |
-| `format_pages` | 给模型的文字 | **留在 Peck**，加 `Ocr`、`Blank`、`Failed` 的说法 |
-| `tools/web.rs:270`（下载到的 PDF） | `read_pages` | `read` |
-| `harness/loop.rs::ocr_job` | 拆页 → `gateway::mathpix` 上传，**不问** | `quote` → `approve_as` 批准框（第几页、预计费用）→ `mathpix::run`；拒绝就 `Denied` |
-| `gateway/mathpix.rs` | Peck 的 Mathpix 客户端 | 删掉；`Mathpix::Mock` 换成 `FakeTransport::echo()` |
+| `read_pdf`、`ocr_pdf` 两个工具（`harness/tools/pdf.rs`、`tools/mod.rs` 的说明） | Peck 自己的 | 引擎的 `pdf_info`、`pdf_read`、`pdf_render`、`pdf_ocr`、`pdf_find`、`pdf_outline`、`pdf_annotations`、`pdf_fields`、`pdf_mathpix_quote`、`pdf_mathpix` |
+| `pdfkit()`（JXA）、`page_count`、`read_pages`、`has_text`、`split`、`parse_pages`、`format_pages` | osascript 子进程、Peck 拼的文字 | 删掉；模型读引擎的 Markdown |
+| `image_budget`（按窗口定张数） | Peck 自己的 | 留在 Peck，填进 `pdf_read` 的 `max_images` |
+| `tools/web.rs` 下载到的 PDF | `read_pages` | `read` |
+| `harness/loop.rs::ocr_job` | 拆页 → `gateway::mathpix` 上传，**不问** | `pdf_mathpix`：`Approve` 弹审批卡片（第几页、预计费用）；拒绝零请求；`usage` 记 `Fee::Ocr` |
+| `gateway/mathpix.rs` | Peck 的 Mathpix 客户端 | 删掉；模拟模式给 `toolkit_with_mathpix` 注入 `FakeTransport::echo()` |
 
-**先改 `read_pdf` 的取字**：旧的 JXA 和引擎读的都是 PDFKit 的 `page.string`，换完文字应该**逐字一致**，差异就是桥的 bug，基准最干净。核对办法：换之前在 Peck 里加一个基准测试，用 `samples` 生成的样本跑旧 JXA，记下每页文字、哪些页出了图、图的宽高；换成引擎后同一个测试必须一致（文字逐字、图宽高 ±1px）。这一步过了，再分开加新行为（扫描页本机 OCR、空白页的说法、`ocr_pdf` 的批准框），这样每一步的变化都看得清。
+`Ctx`：`Files` 只放行项目里的文件和这次的附件；`Keys` 交 TOOL KEYS 里的 Mathpix；`Progress` 进任务事件；附件里的页图转成给看图模型的图，长文字附件落进 spill 文件。不开 `pdfium`。核对：换之前用 `samples` 的样本记下旧 `read_pdf` 每页的文字、哪些页出图；换完每页文字一致（同是 PDFKit）。
 
 ### 4.2 Pith
 
@@ -353,20 +353,22 @@ Pomelo 上传 Word 用 `mathpix::submit_file(bytes, mime, estimated_pages, &keys
 
 页码：引擎的 `index` = PDF.js 的 `pageIndex + 1`，`label` 应等于 PDF.js 的页标签；Pith 存 `index`、显示 `label`，引用就能跳回阅读器的那一页。核对：带罗马数字前言的样本，引擎和 PDF.js 逐页比标签。旧行为核对：拿 Pith 现有的夹具（`research/fixtures.rs` 的 `survey_pdf`、`scanned_pdf`）和样本，比 `pdf-extract` 和引擎的结果——这里**预期会不一样**（换了底层），比的是「没有缺字」「两栏顺序对」，不是逐字相等。替换掉的：`pdf-extract` 依赖（`THIRD_PARTY.md` 删一行）和 Pith 的 Mathpix HTTP 代码。已经存进库的正文不自动重取。
 
-### 4.3 Pomelo（v0.8.0，Phase 计划见 `ROADMAP.md`）
+### 4.3 Pomelo（1.2.0，开 `pdfium`）
 
 | 入口 | 现在 | 换成 |
 | --- | --- | --- |
-| `youzi/pdf.rs` 的 `open`、`pages`、`render_pages`、`page_jpeg`、`jpeg_page`、`jpeg_of`、`image_pages` | Pomelo 自己的 objc2 | 引擎（这些就是引擎的原型） |
-| `youzi/files.rs::prepare`、`pictures_only`（知识库导入） | 没文字层的 PDF 只列文件名 | `read(Ocr::auto(), render: None)`：扫描件在本机就能进知识库；默认开，已有的扫描件升级后在后台自动补（站主定） |
-| `youzi/office.rs`（`embedded_images`、`images_text`、`look_at`）、`assistants/importer.rs` | `pdf::pages`、`image_pages`、`page_jpeg` | `Document::image_counts`、`read`、`Document::render` |
-| `pub2md/job.rs` 的原页图（`render_pages`） | 整份画完存文件夹 | `read_each` 逐页画、逐页存（能取消） |
-| `pub2md/mathpix.rs` 的 submit / status / 下载 / converter | Pomelo 自己的 reqwest 客户端 | `mathpix::submit`（`Submitted` 存进任务）/ `wait` / `fetch(mmd_zip)` / `delete`；Word 走 `submit_file`；转 Word、LaTeX 走 `mathpix::convert`；整份删掉 |
-| `pdf::images_to_pdf`（Pub2MD 的照片） | Pomelo 自己的 objc2 | `compose::images` |
-| `print.rs::assemble`、`png_of_pdf`（见字如面导出） | Pomelo 自己的 objc2 | `compose::assemble`；`Document::render(Png)` |
-| `knowledge.rs` 检索命中 PDF 段落 | 只给文字；`view=look` 现画 | 命中就现画那一页给能看图的云端模型（站主定） |
-| 留在 Pomelo | — | `sha256_hex`、`print.rs` 的 WebKit 排版、`mmd.rs` 的切块、Pub2MD 其余 |
+| `youzi/pdf.rs` 的 `pages`、`render_pages`、`page_jpeg`、`image_pages`、`images_to_pdf` | Pomelo 自己的 objc2 | 引擎（这些就是引擎的原型）；`sha256_hex` 留在 Pomelo |
+| `youzi/files.rs`（知识库导入）、`youzi/assistants/seeker/files.rs` | 没文字层的 PDF 只列文件名 | `read(Ocr::auto(), render: None)`：读取、扫描件识别、补连字；已有的扫描件升级后后台补 |
+| `youzi/office.rs`、`youzi/assistants/importer.rs` | `pdf::pages`、`image_pages`、`page_jpeg` | `Document::image_counts`、`read`、`Document::render` |
+| 柚子的 `pomelo_file`（`youzi/skills/files.rs`）遇到 PDF 的 `outline`、`read`、`find`、`images`、`look` | Pomelo 自己读 | 不再处理 PDF；柚子另有引擎的 `pdf_info`、`pdf_read`、`pdf_render`、`pdf_find`、`pdf_outline`、`pdf_mathpix_quote`、`pdf_mathpix` |
+| `youzi/cite.rs` | 只认「文件加段落」 | 加 PDF 位置：物理页码，另附页标签和框；点回原文按物理页码跳 |
+| `knowledge.rs` 检索命中 PDF 段落 | 只给文字；`view=look` 现画 | 命中就现画那一页给能看图的云端模型 |
+| `youzi/assistants/pub2md/job.rs` 的原页图 | 整份画完存文件夹 | `read_each` 逐页画、逐页存（能取消） |
+| `pub2md/mathpix.rs` 的 submit / status / 下载 / converter | Pomelo 自己的 reqwest 客户端 | `mathpix::submit`（`Submitted` 存进任务）/ `wait` / `fetch` / `delete`；Word 走 `submit_file`；转 Word、LaTeX 走 `mathpix::convert`（引擎 v0.8.0 补）；整份删掉 |
+| `print.rs` 的 `assemble`、`png_of_pdf`（见字如面导出） | Pomelo 自己的 objc2 | `compose::assemble`、`Document::render(Png)` |
+| 留在 Pomelo | — | `sha256_hex`、`print.rs` 的 WebKit 排版、`mmd.rs` 的切块、长材料预选、跨文件和跨知识库的检索、看图上限（每次几张、本地模型、「发给云端」关掉的来源） |
 
+`Ctx`：`Files::read` 只放行这次提问带的文件和知识库里的文件；`Keys` 交 PDF 密码和 Mathpix 密钥。
 核对：文字 PDF 的知识库分段应逐字一致（同是 PDFKit）；原页图比宽高、比像素平均差（阈值用样本定）；Pub2MD 用 `FakeTransport` 跑一遍完整任务，`pdf_id` 存进任务、中途退出再继续不重复上传。
 
 ---
@@ -647,13 +649,14 @@ doc.objects(8)?;   // Vec<PageObject>，需启用 "pdfium"
 
 - **怎么找**：`find::find(doc, pages, query, options, cancel, progress)` 逐物理页交给 engine-core 的 `Finder`，归一化、整句 / 按词都在 engine-core。每页取哪份文字：
   1. 有引擎写的可搜索层（`EnginePDFOCRText`）→ 用存下的识别原文，来源 `ocr`；框依次从文字层选区、PDFium、现做的 Vision 里核实。
-  2. 文字层够代表整页（和 `read` 同一门槛：≥ 20 个字、不是乱码）→ 用文字层，来源 `text`。
+  2. 文字层够代表整页（和 `read` 同一门槛：≥ 20 个字、不是乱码）→ 用文字层（开了 `pdfium` 时补过连字），来源 `text`。
   3. 开了 `pdfium` 且 PDFium 取得到整页文字（PDFKit 读不出的早期 OCR 层）→ 用它。
-  4. 其余：页面不是近乎全白（扫描页、整页图，带几个字的页码或水印也算）且 `ocr` 开着 → 现做 Vision，来源 `ocr`；没识别出字再找文字层里那几个字。
-- **框**：PDFKit 按原文的 UTF-16 区间取选区、核对选区文字，再按行给框（`decisions/0021`）；Vision 给词或字的框，给不出时用行框；核实不了的命中保留页码、`rects` 为空。坐标约定见 `CLAUDE.md`「六」。
+  4. 其余：页面不是近乎全白且 `ocr` 开着 → 现做 Vision，来源 `ocr`；没识别出字再找文字层里那几个字。所选页大多有完整文字层时，只识别完全没字的页（字少的多半是插图、封面）。
+- **补连字**（开了 `pdfium`，`decisions/0022`）：PDFKit 原文照旧，按 PDFium 同一页的词表把取丢连字的词换回来（`src/ligatures.rs`），记下替换前后的位置，选区和框仍按 PDFKit 原文取。每份文件看第一张有连字的页定要不要补，没丢就不再取参照。`read` 也用。
+- **框**：PDFKit 按原文的 UTF-16 区间取选区、核对选区文字，再按行给框（`decisions/0021`）。命中有中文、框高超过字宽的 1.6 倍时，开了 `pdfium` 就按 PDFium 量的整行上下沿收紧。Vision 给词或字的框，给不出时用行框；核实不了的命中保留页码、`rects` 为空。坐标约定见 `CLAUDE.md`「六」。
+- **缓存**：按文件内容记住每页文字、PDFium 字框、是否扫描页、Vision 结果，约 64 MiB（`src/sys/cache.rs`）；同一份文件再查不重取字、不重识别。
 - **Markdown**：每处一行（页码、页标签、本机识别标记、前后文），中文之间的换行去掉；按词时先说是哪几页同时出现这些词。
 - **Web**：`ViewerOptions.search(query, signal)` 由 App 接到 `pdf_find`，套件按框画高亮、跳页，接口见 `toolkit.md`。
-- **已知局限**（2026-11-27 审核，`decisions/0021`）：PDFKit 取字在部分期刊会丢 fi 连字（取成 `f` 或空格），这些词 `read`、`find` 都对不上；个别中文字体的行框约有字高的 2.4 倍（和「预览」里选中时一样），高亮会罩到下一行。
 
 ### 9.3 Rust 接口的变化
 

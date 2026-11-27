@@ -4,10 +4,11 @@
 
 ## v0.7.0
 
-- **工具包**：17 个工具（`tools/*.json`），`tools::manifest`、`tools::call`、`tools::toolkit_with_mathpix`，命令行 `engine-pdf tools / describe / call`。App 按工具名覆盖说明、默认值、上限、确认或关掉；页图和新文件作附件；Mathpix 先报价、每次确认才联网。接线见 `docs/toolkit.md`。
-- **查找**：`find::find` 和 `pdf_find`。归一化来自 engine-core（简繁、全角半角、连字、断词、软连字符）；没有整句时按同页共现的词找；交回原文、物理页码、页标签、按行的坐标框、来源（原文 / 本机识别）。扫描页复用可搜索层或现做 Vision，判断「是不是扫描页」和 `read` 同一门槛。
+- **工具包**：17 个工具（`tools/*.json`），`tools::manifest`、`tools::call`、`tools::toolkit_with_mathpix`，命令行 `engine-pdf tools / describe / call`。App 按工具名覆盖说明、默认值、上限、确认或关掉；页图和新文件作附件；Mathpix 先报价、每次确认才联网。`pdf_read` 有 `max_images`（App 按模型窗口定一次附几张）。接线见 `docs/toolkit.md`。
+- **查找**：`find::find` 和 `pdf_find`。归一化来自 engine-core（简繁、全角半角、连字、断词、软连字符）；没有整句时按同页共现的词找；交回原文、物理页码、页标签、按行的坐标框、来源（原文 / 本机识别）。扫描页复用可搜索层或现做 Vision；按文件内容缓存，同一份文件再查很快。
+- **开 `pdfium` 时补连字**：PDFKit 在部分期刊把 fi、fl 连字取成 `f` 或空格，`read`、`Document::text`、`find` 现在按 PDFium 的字补回来（顺序照 PDFKit），并收紧个别中文字体偏高的查找框（`decisions/0022`）。不开 `pdfium` 的结果和以前一样。PDFium 被同进程别的代码先绑定时，引擎当没有 PDFium，不再崩。
 - **Web**：`ViewerOptions.search(query, signal)` 接 App 的查找结果；`EditorViewer.find` 改成异步，按框高亮、跳页；`onFind` 多了第三个参数 `{ pending, result }`，前两个不变。不再用 PDF.js 自带的查找。
-- **Rust**：钉 engine-core v0.2.1（开发期 `[patch]` 指本机，见 `HANDOFF.md`）。`Cancel` 改由 engine-core 导出，用法不变；工具层类型在 `engine_pdf::tools` 下（`ToolError`、`Quote`、`Usage` 等），`Error`、`mathpix::Failure` 能转成 `ToolError`。原有接口不变。
+- **Rust**：钉 engine-core `v0.2.1`。`Cancel` 改由 engine-core 导出，用法不变；工具层类型在 `engine_pdf::tools` 下（`ToolError`、`Quote`、`Usage` 等），`Error`、`mathpix::Failure` 能转成 `ToolError`。原有接口不变。
 - **App 升级要改的**：Rust 不用改；用了 Web 套件查找的，传 `search`、`await` 新的 `find`、自己写高亮样式。
 
 ## v0.6.0

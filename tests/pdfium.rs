@@ -3,6 +3,7 @@
 use engine_pdf::Document;
 use pdfium_render::prelude::*;
 
+// 一个进程只能绑定一次 PDFium：这里先绑，引擎随后就当没有 PDFium（读文字照常、不补连字），不能崩。
 #[test]
 fn static_pdfium_can_write_pdf_readable_by_pdfkit() {
     let pdfium = Pdfium::default();

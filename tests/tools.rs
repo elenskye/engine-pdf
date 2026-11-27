@@ -96,7 +96,7 @@ fn runs_every_manifest_example_with_generated_files_and_mock_mathpix() {
             .iter()
             .map(|spec| spec.examples.len())
             .sum::<usize>(),
-        25
+        26
     );
     let kit = if cfg!(feature = "pdfium") {
         kit

@@ -117,7 +117,7 @@ engine-pdf 是 Peck、Pith、Pomelo 共用的 Mac PDF 引擎（独立 Rust 库�
 
 ## 六、engine-pdf 自己的
 
-- **框架和库**：PDFKit、Vision、AppKit 经 `objc2` 在进程里调（`decisions/0003`），全是 Mac 专属；云端不做本引擎。写入由 lopdf 在原文件的对象上做（`decisions/0017`，经 `src/sys/objects.rs`）；PDFKit 负责读和画新标注的外观。PDFium 只读（列页面对象、取字形框、解图），在默认关闭的 `pdfium` feature 后面，只用预编译静态库、不从源码编；移动、删除、涂黑由 lopdf 只改原内容流里的那几条指令，交文件前核对别处不变（`decisions/0010`、`0019`）。共用的工具包骨架、find 归一化、取消和错误约定来自 engine-core（钉 tag，`decisions/0020`）。
+- **框架和库**：PDFKit、Vision、AppKit 经 `objc2` 在进程里调（`decisions/0003`），全是 Mac 专属；云端不做本引擎。写入由 lopdf 在原文件的对象上做（`decisions/0017`，经 `src/sys/objects.rs`）；PDFKit 负责读和画新标注的外观。PDFium 只读（列页面对象、取字形框、解图，当补连字的参照），在默认关闭的 `pdfium` feature 后面，只用预编译静态库、不从源码编；移动、删除、涂黑由 lopdf 只改原内容流里的那几条指令，交文件前核对别处不变（`decisions/0010`、`0019`、`0022`）。共用的工具包骨架、find 归一化、取消和错误约定来自 engine-core（钉 tag，`decisions/0020`）。
 - **位置约定**（find、读写共用）：页码一律是原文件的**物理页码，从 1 起**；页标签另给；框用 PDF 坐标（左下原点，pt，含 CropBox 偏移）。
 - **边界**：PDF 是数据，填表只写字段的值，不跑表单里的计算脚本。PDF 密码和 Mathpix 密钥一样由 App 交进来。Mathpix 真跑只用样本，每版 $1（每页 $0.005）。编辑统一走 `edit::apply`；`Document` 不跨线程（`!Send`）；每页一个 autorelease pool；OCR 一次一页。
 - **`web/`**：TS 严格模式，`pdfjs-dist` 是 peer 依赖（钉 6.5 这一线）；`web/src/plan.ts` 和 Rust 的 `edit::Plan` 一一对应，两边的测试吃同一套 `tests/fixtures/plan/`。

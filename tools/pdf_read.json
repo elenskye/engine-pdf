@@ -8,7 +8,8 @@
       "file": {"type": "string", "description": "宿主授权的 PDF 文件标识。CLI 传本机路径。"},
       "pages": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 4294967295, "description": "原文件的物理页码，从 1 起。"}, "maxItems": 20, "description": "按给定顺序读取，可重复。"},
       "start_page": {"type": "integer", "minimum": 1, "maximum": 4294967295, "default": 1, "description": "省略 pages 时，从这页起读最多 5 页。"},
-      "images": {"type": "boolean", "default": true},
+      "images": {"type": "boolean", "default": true, "description": "附页图。空白页、读失败的页不附。"},
+      "max_images": {"type": "integer", "minimum": 0, "maximum": 20, "default": 20, "description": "这次最多附几张页图，按页的顺序先到先得；超出的页会注明，单独读那一页就能拿到图。"},
       "format": {"type": "string", "enum": ["jpeg", "png"], "default": "jpeg"},
       "max_side": {"type": "integer", "minimum": 1, "maximum": 4096, "default": 1568, "description": "页图最长边像素数。"},
       "ocr": {"type": "boolean", "default": false, "description": "文字层不足或乱码时补做本机 OCR。"},
@@ -16,7 +17,7 @@
     },
     "required": ["file"]
   },
-  "result": "Markdown 按页给出文字。data 附页码、页标签、来源、单页错误和附件名。默认附非空白成功页的 JPEG 图。长页的 Markdown 和 data 各给同一段最多 4000 字的摘录，全文作 UTF-8 文本附件。省略 pages 时，Output.next 带下一批的 start_page 并保留选项。",
+  "result": "Markdown 按页给出文字。data 附页码、页标签、来源、单页错误和附件名。默认附非空白成功页的 JPEG 图，最多 max_images 张，超出的页注明 image_omitted。长页的 Markdown 和 data 各给同一段最多 4000 字的摘录，全文作 UTF-8 文本附件。省略 pages 时，Output.next 带下一批的 start_page 并保留选项。",
   "result_schema": {
     "type": "object",
     "properties": {
@@ -31,6 +32,7 @@
             "text": {"type": "string"},
             "image_attachment": {"type": "string"},
             "text_attachment": {"type": "string"},
+            "image_omitted": {"type": "boolean", "description": "这一页要附图，但这次的张数满了。"},
             "error": {"type": "object"}
           },
           "required": ["index", "source"]
@@ -53,6 +55,7 @@
   "effects": {"network": false, "writes": "none"},
   "examples": [
     {"args": {"file": "samples/out/mixed.pdf", "pages": [1]}, "expect": {"contains": "morning tide"}},
-    {"args": {"file": "samples/out/mixed.pdf", "pages": [2], "ocr": true}, "expect": {"contains": "quiet valley"}}
+    {"args": {"file": "samples/out/mixed.pdf", "pages": [2], "ocr": true}, "expect": {"contains": "quiet valley"}},
+    {"args": {"file": "samples/out/mixed.pdf", "pages": [1, 4], "max_images": 1}, "expect": {"contains": "单独读这一页能拿到图"}}
   ]
 }

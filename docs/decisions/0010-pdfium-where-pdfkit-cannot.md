@@ -1,5 +1,7 @@
 # 0010 PDFium 只补 PDFKit 做不到的，先实验再定
 
+> 2026-11-27：`0022` 改了「取字只走 PDFKit」：开了 `pdfium` 时用 PDFium 同一页的字当参照，补 PDFKit 取丢的连字、收紧偏高的中文行框。
+
 2026-11-25 站主定（ASK）。部分改了 `0003` 里「不用 pdfium」那一条：取字、渲染、OCR 仍然只走 PDFKit 和 Vision。
 
 查到的（本机 macOS SDK 头文件、Apple 开发者论坛）：

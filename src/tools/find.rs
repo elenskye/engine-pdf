@@ -105,19 +105,13 @@ fn one_line(text: &str) -> String {
             .next_if(|&next| next == '\r' || next == '\n')
             .is_some()
         {}
-        let joined =
-            out.chars().next_back().is_some_and(wide) && chars.peek().is_some_and(|&c| wide(c));
+        let joined = out.chars().next_back().is_some_and(crate::find::wide)
+            && chars.peek().is_some_and(|&c| crate::find::wide(c));
         if !joined {
             out.push(' ');
         }
     }
     out
-}
-
-fn wide(ch: char) -> bool {
-    matches!(ch,
-        '\u{3000}'..='\u{30FF}' | '\u{3400}'..='\u{4DBF}' | '\u{4E00}'..='\u{9FFF}'
-        | '\u{F900}'..='\u{FAFF}' | '\u{FF00}'..='\u{FFEF}')
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 use std::{
+    cell::OnceCell,
     ffi::CStr,
     ptr::{NonNull, null_mut},
 };
@@ -23,6 +24,11 @@ pub(crate) struct Pdf {
     has_form: bool,
     password: Option<Zeroizing<String>>,
     owner_verified: bool,
+    fingerprint: OnceCell<super::cache::Fingerprint>,
+    /// 这份文件的 PDFKit 取字丢不丢连字；看过一张有连字的页就定下来，没丢就不再取 PDFium 参照。
+    ligatures_lost: std::cell::Cell<Option<bool>>,
+    #[cfg(feature = "pdfium")]
+    pdfium: OnceCell<Option<pdfium_render::prelude::PdfDocument<'static>>>,
 }
 
 impl Pdf {
@@ -98,6 +104,10 @@ impl Pdf {
                 has_form,
                 password: password.cloned(),
                 owner_verified,
+                fingerprint: OnceCell::new(),
+                ligatures_lost: std::cell::Cell::new(None),
+                #[cfg(feature = "pdfium")]
+                pdfium: OnceCell::new(),
             };
             // PDFKit 有时为坏文件返回零页文档。
             if pdf.page_count() == 0 {
@@ -155,17 +165,90 @@ impl Pdf {
     }
 
     pub(crate) fn text(&self, page: u32) -> Result<String, Error> {
-        self.with_page(page, |page| Ok(text(page)))
+        let raw = self.with_page(page, |native| Ok(text(native)))?;
+        Ok(self.repaired(page, raw))
     }
 
     pub(crate) fn page(&self, page: u32) -> Result<(Option<String>, String, bool), Error> {
-        self.with_page(page, |page| {
-            let label = if self.has_labels { label(page) } else { None };
-            if let Some(ordered) = embedded_ocr(page) {
+        let (label, text, ocr) = self.with_page(page, |native| {
+            let label = if self.has_labels { label(native) } else { None };
+            if let Some(ordered) = embedded_ocr(native) {
                 return Ok((label, ordered, true));
             }
-            Ok((label, text(page), false))
-        })
+            Ok((label, text(native), false))
+        })?;
+        if ocr {
+            return Ok((label, text, true));
+        }
+        Ok((label, self.repaired(page, text), false))
+    }
+
+    /// PDFKit 取丢的连字按 PDFium 同一页的字补回来；没开 `pdfium` 原样交回（`decisions/0022`）。
+    pub(super) fn repaired(&self, page: u32, raw: String) -> String {
+        self.ligature_reference(page, &raw)
+            .and_then(|reference| crate::ligatures::repair(&raw, &reference))
+            .map_or(raw, |repaired| repaired.text)
+    }
+
+    /// 补连字要用的 PDFium 参照。只有带拉丁字母的页才可能缺连字；同一份文件的正文是同一种字体，
+    /// 第一张说明得了的页上没丢，后面就不再取。
+    pub(super) fn ligature_reference(&self, page: u32, raw: &str) -> Option<String> {
+        if !latin(raw) || self.ligatures_lost.get() == Some(false) {
+            return None;
+        }
+        let reference = self.reference(page)?;
+        if self.ligatures_lost.get().is_none() {
+            self.ligatures_lost
+                .set(crate::ligatures::lost(raw, &reference));
+        }
+        Some(reference)
+    }
+
+    /// PDFium 同一页的字：补连字的参照，也是 PDFKit 读不出时的后备。没开 `pdfium` 为 `None`。
+    pub(super) fn reference(&self, page: u32) -> Option<String> {
+        #[cfg(feature = "pdfium")]
+        {
+            let pdf = self.pdfium()?;
+            let page = pdf.pages().get(i32::try_from(page - 1).ok()?).ok()?;
+            Some(page.text().ok()?.all())
+        }
+        #[cfg(not(feature = "pdfium"))]
+        {
+            let _ = page;
+            None
+        }
+    }
+
+    /// 同一页 PDFium 的字和字形框。
+    pub(super) fn layer(&self, page: u32) -> Option<super::layer::Layer> {
+        #[cfg(feature = "pdfium")]
+        {
+            super::layer::Layer::of(self.pdfium()?, page)
+        }
+        #[cfg(not(feature = "pdfium"))]
+        {
+            let _ = page;
+            None
+        }
+    }
+
+    #[cfg(feature = "pdfium")]
+    fn pdfium(&self) -> Option<&pdfium_render::prelude::PdfDocument<'static>> {
+        self.pdfium
+            .get_or_init(|| {
+                super::pdfium::open_owned(
+                    self.original_bytes().to_vec(),
+                    self.password.as_ref().map(|password| password.as_str()),
+                )
+            })
+            .as_ref()
+    }
+
+    /// 文件内容的指纹，缓存用。
+    pub(super) fn fingerprint(&self) -> super::cache::Fingerprint {
+        *self
+            .fingerprint
+            .get_or_init(|| super::cache::Fingerprint::of(self.original_bytes()))
     }
 
     pub(crate) fn render(
@@ -270,6 +353,11 @@ impl Pdf {
             bytes.map(|data| data.to_vec()).ok_or(Error::Damaged)
         })
     }
+}
+
+/// 只有带拉丁字母的页才可能缺连字。
+pub(super) fn latin(text: &str) -> bool {
+    text.bytes().any(|byte| byte.is_ascii_alphabetic())
 }
 
 pub(super) fn embedded_ocr(page: &PDFPage) -> Option<String> {

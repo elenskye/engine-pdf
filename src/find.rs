@@ -53,3 +53,10 @@ pub fn find(
     }
     Ok(finder.finish())
 }
+
+/// 中日文字和全角标点：排版里一个字大约一个字号宽。
+pub(crate) fn wide(ch: char) -> bool {
+    matches!(ch,
+        '\u{3000}'..='\u{30FF}' | '\u{3400}'..='\u{4DBF}' | '\u{4E00}'..='\u{9FFF}'
+        | '\u{F900}'..='\u{FAFF}' | '\u{FF00}'..='\u{FFEF}')
+}

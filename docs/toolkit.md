@@ -66,10 +66,20 @@ cargo run --bin engine-pdf -- call pdf_mathpix '{"file":"samples/out/mixed.pdf",
 
 ## 三个 App 接哪些
 
-- **Peck**：`pdf_info`、`pdf_read`、`pdf_find` 给 Agent 带物理页码的文字和页图；难页先 `pdf_mathpix_quote` 给用户看选页和价钱。
-- **Pith**：阅读器查找走 `pdf_find`（或 `find::find`），按物理页跳、按 `rects` 高亮，空框也能跳页；排版识别用 `pdf_mathpix`，附件名读 MMD、行数据。
-- **扫描件的查找**：没有可搜索层的扫描页每次查找都现做 Vision（热启动每页约 0.5 秒，进程里第一次加载模型 16–50 秒），引擎不缓存。扫描书要反复查的，先用 `pdf_searchable` 存一份可搜索副本；阅读器只想查原文时传 `ocr:false`。
-- **Pomelo**：建索引用 `pdf_read`（关页图）或 `read_each`，引用命中时 `pdf_render`；扫描件、拼接用 `pdf_searchable`、`pdf_assemble`。
+| App | 给模型的工具 | `pdfium` | 另外 |
+| --- | --- | --- | --- |
+| Peck 1.4.0 | `pdf_info`、`pdf_read`、`pdf_render`、`pdf_ocr`、`pdf_find`、`pdf_outline`、`pdf_annotations`、`pdf_fields`、`pdf_mathpix_quote`、`pdf_mathpix` | 不开 | `max_images` 按模型窗口填（每 5 万 token 一张）；说明要英文就覆盖 |
+| Pomelo 1.2.0 | 柚子：`pdf_info`、`pdf_read`、`pdf_render`、`pdf_find`、`pdf_outline`、`pdf_mathpix_quote`、`pdf_mathpix` | 开 | 建索引、Pub2MD 用 Rust 接口；`pomelo_file` 不再管 PDF |
+| Pith（v0.9） | 阅读器查找走 `pdf_find`；排版识别用 `pdf_mathpix` | 开 | 按物理页跳、按 `rects` 高亮，空框也能跳页 |
+
+- 改文件的工具（`pdf_edit`、`pdf_redact`、拆拼、照片打包、可搜索副本）三家都还没给模型；要给时先定新文件存哪、要不要审批。
+- 计划和验收在 `ROADMAP.md`，调用点怎么换在 design §4。
+
+## PDFium、缓存和速度
+
+- **开 `pdfium` 多了什么**：补 PDFKit 取丢的连字（部分期刊的 fi、fl 取成 `f` 或空格）、收紧偏高的中文行框、读 PDFKit 读不出的早期 OCR 层，外加对象编辑和涂黑（`decisions/0022`）。PDFium 一个进程只能绑定一次，App 自己别再绑，否则引擎当没有 PDFium。
+- **缓存**：查找按文件内容记住每页文字、字框和识别结果（约 64 MiB，进程内），同一份文件再查很快；84 页杂志第一次约 3.6 秒，第二次 0.5 秒。
+- **扫描件**：没有可搜索层的扫描页第一次查找要现做识别（每页约 0.5 秒；进程里第一次用识别模型要等 16–33 秒）。扫描书常查的，先用 `pdf_searchable` 存可搜索副本；只想查原文传 `ocr:false`。
 
 ## Web 阅读器查找
 

@@ -101,13 +101,17 @@ pub(super) fn read(
         pages
     };
     let max_side = uint(args, "max_side");
+    // App 按模型的上下文窗口定一次附几张（Peck 每 5 万 token 一张）；超出的页说明怎么拿到图。
+    let max_images = uint(args, "max_images") as usize;
+    let images = args["images"] == true && max_images > 0;
     let opts = ReadOptions {
-        render: (args["images"] == true).then(|| {
-            if args["format"] == "png" {
+        render: images.then(|| {
+            let render = if args["format"] == "png" {
                 Render::png(max_side)
             } else {
                 Render::jpeg(max_side)
-            }
+            };
+            render.at_most(max_images)
         }),
         ocr: if args["ocr"] == true {
             Ocr::Auto(languages(args))
@@ -159,6 +163,10 @@ pub(super) fn read(
         }
         if let Some(image) = read.image {
             record["image_attachment"] = json!(image_attachment(&mut out, &name, image));
+        } else if images && !matches!(source, "blank" | "failed") {
+            out.text
+                .push_str("（这次附的页图满了，单独读这一页能拿到图。）\n");
+            record["image_omitted"] = json!(true);
         }
         out.text.push('\n');
         data.push(record);
@@ -175,6 +183,7 @@ pub(super) fn read(
     if let Some(&last) = pages.last().filter(|&&last| implicit && last < total) {
         out.next = Some(json!({
             "file": file(args), "start_page": last + 1, "images": args["images"],
+            "max_images": args["max_images"],
             "format": args["format"], "max_side": args["max_side"], "ocr": args["ocr"],
             "languages": args["languages"],
         }));

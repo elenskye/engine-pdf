@@ -11,11 +11,27 @@ use crate::{Cancel, Error};
 use super::content::{Kind, PageContent};
 use super::{Pdf, check, objects, password};
 
-static PDFIUM: OnceLock<Pdfium> = OnceLock::new();
+static PDFIUM: OnceLock<Option<Pdfium>> = OnceLock::new();
+
+/// 静态链进来的 PDFium。一个进程只能绑定一次：别的代码先绑了，引擎就当没有 PDFium，不崩。
+fn pdfium() -> Result<&'static Pdfium, Error> {
+    PDFIUM
+        .get_or_init(|| {
+            Pdfium::bind_to_statically_linked_library()
+                .ok()
+                .map(Pdfium::new)
+        })
+        .as_ref()
+        .ok_or(Error::PdfiumUnavailable)
+}
+
+/// 文档自己持有一份字节的 PDFium 文档，跟着 `Pdf` 走（取字参照、字形框）。
+pub(super) fn open_owned(bytes: Vec<u8>, password: Option<&str>) -> Option<PdfDocument<'static>> {
+    pdfium().ok()?.load_pdf_from_byte_vec(bytes, password).ok()
+}
 
 pub(super) fn open(bytes: &[u8]) -> Result<PdfDocument<'_>, Error> {
-    PDFIUM
-        .get_or_init(Pdfium::default)
+    pdfium()?
         .load_pdf_from_byte_slice(bytes, None)
         .map_err(|_| Error::Damaged)
 }
