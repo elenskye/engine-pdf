@@ -4,6 +4,8 @@
 
 下一步：**v0.7.0 工具包 + `pdf_find`**，Phase 计划已写进 `ROADMAP.md`，等站主看过（`decisions/0020`）。Phase 1（工具清单草案、字框取法实验）可以先做；Phase 2 起要钉 engine-core `v0.2.0`（`../engine-core`，它的 v0.2.0 计划也在等批）。`CLAUDE.md` 已照抄总仓库 `GUIDE.md`「一」到「五」。接 Pomelo 改为 v0.8、接 Pith 改为 v0.9；Peck 建议等 v0.7 后照工具包接。
 
+> 准则更新（2026-11-27）：`CLAUDE.md`「二」末尾加了「改用到的引擎」（总仓库 `docs/decisions/0009`）。用到别的引擎就能直接改它、照它的规矩提交和打 tag，动之前读它的 `CLAUDE.md`；改它已有的接口先问站主。
+
 ## 本轮（Claude 审核 v0.6.0）
 
 Codex 实施了 Phase 1–5。审核时在 38 份真实论文和站主的扫描件上实测，发现 PDFium 整页重写会改坏页面别处，改了写法（`decisions/0019`）：
