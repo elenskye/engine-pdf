@@ -20,11 +20,12 @@ const reader = new EditorViewer({
     element("page-number").title = label ?? "";
     element("page-count").textContent = `/ ${reader.document?.numPages ?? 0}${label ? ` · ${label}` : ""}`;
     void showAnnotations();
+    if (tools.tool === "object") showObjects(page);
   },
   onScale: scale => { element("scale").value = `${Math.round(scale * 100)}%`; },
   onFind: (current, total) => { element("find-count").value = element("search").value ? `${current} / ${total}` : ""; },
 });
-const tools = new EditorTools(reader, () => { void showAnnotations(); });
+const tools = new EditorTools(reader, () => { controls(); void showAnnotations(); });
 
 function status(message, error = false) {
   element("status").textContent = message;
@@ -57,13 +58,48 @@ async function readerAnnotations(page) {
   return annotations.get(page);
 }
 
+async function loadObjects(page) {
+  const source = sources[0];
+  if (!source || !meta.pdfium) return;
+  const cache = source.objectPages ??= new Map();
+  if (!cache.has(page)) {
+    const result = request("objects", [source], { page }).then(response => response.json());
+    cache.set(page, result);
+    result.catch(() => {
+      if (cache.get(page) === result) cache.delete(page);
+    });
+  }
+  const { objects } = await cache.get(page);
+  if (source !== sources[0] || cache !== source.objectPages) return;
+  tools.setPageObjects(page, objects);
+}
+
+function showObjects(page) {
+  const source = sources[0];
+  void loadObjects(page).catch(error => {
+    if (source === sources[0] && tools.tool === "object" && page === reader.pageNumber) {
+      status(error.message, true);
+    }
+  });
+}
+
+reader.events.on("pagerendered", ({ pageNumber }) => {
+  if (tools.tool === "object") showObjects(pageNumber);
+});
+
 function controls() {
   const enabled = !!organizer && !busy;
   for (const control of document.querySelectorAll(".toolbar button, .toolbar input, .toolbar select, .sidebar button, .sidebar input, .sidebar select, .navigation button, .navigation input")) {
     control.disabled = !enabled;
   }
   element("save").disabled = !enabled;
+  element("searchable").disabled = !enabled;
   element("open").disabled = busy;
+  element("viewer-container").inert = busy;
+  for (const control of document.querySelectorAll("[data-pdfium]")) {
+    control.hidden = !organizer || !meta.pdfium;
+  }
+  element("save").textContent = tools.pendingRedactions.length ? "确认涂黑并保存" : "保存副本";
   if (!enabled) return;
   element("page-up").disabled = selectedPage === 0;
   element("page-down").disabled = selectedPage === organizer.pages.length - 1;
@@ -72,10 +108,20 @@ function controls() {
   element("opacity").disabled = !["ink", "underline", "strikeout", "note", "rectangle", "ellipse", "line", "arrow"].includes(tools.tool);
   element("width").disabled = !["ink", "rectangle", "ellipse", "line", "arrow"].includes(tools.tool);
   element("source-password").hidden = !sources[organizer.pages[selectedPage].source].encrypted;
+  element("delete-selected").disabled = tools.tool === "object" && !tools.selectedObjects.length;
   for (const id of ["child", "rename", "remove", "up", "down", "promote", "indent"]) {
     element(`outline-${id}`).disabled = !selectedOutline;
   }
   for (const remove of element("annotations").querySelectorAll("button[data-pending='true']")) remove.disabled = true;
+}
+
+function dialogChoice(id) {
+  const dialog = element(id);
+  dialog.returnValue = "";
+  dialog.showModal();
+  return new Promise(resolve => {
+    dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true });
+  });
 }
 
 async function work(action) {
@@ -412,7 +458,8 @@ function showTool(tool = tools.tool) {
   for (const button of element("tools").querySelectorAll("[data-tool]")) button.setAttribute("aria-pressed", String(button.dataset.tool === tool));
   element("add-image").setAttribute("aria-pressed", String(tool === "image"));
   element("add-signature").setAttribute("aria-pressed", String(tool === "signature"));
-  element("viewer-container").dataset.draw = String(["note", "rectangle", "ellipse", "line", "arrow", "link"].includes(tool));
+  element("viewer-container").dataset.draw = String(["note", "rectangle", "ellipse", "line", "arrow", "link", "object", "redact"].includes(tool));
+  element("delete-selected").textContent = tool === "object" ? "删除选中对象" : "删除选中标注";
   element("note-options").hidden = !["note", "highlight", "textBox", "ink", "image", "signature"].includes(tool);
   element("apply-comment").hidden = tool === "note";
   element("note-text").placeholder = tool === "note" ? "输入后点击页面" : "附到当前选中的标注";
@@ -424,6 +471,7 @@ for (const button of element("tools").querySelectorAll("[data-tool]")) {
   const markup = tool === "underline" || tool === "strikeout";
   if (markup) button.addEventListener("pointerdown", event => event.preventDefault());
   button.onclick = () => void work(async () => {
+    if (tool === "object") await loadObjects(reader.pageNumber);
     await tools.select(tool);
     showTool();
     style();
@@ -438,7 +486,10 @@ element("viewer-container").addEventListener("pointerup", () => {
 });
 element("undo").onclick = () => reader.undo();
 element("redo").onclick = () => reader.redo();
-element("delete-selected").onclick = () => reader.deleteSelected();
+element("delete-selected").onclick = () => {
+  if (tools.tool === "object") tools.deleteObjects();
+  else reader.deleteSelected();
+};
 element("apply-comment").onclick = () => {
   if (!reader.setSelectedComment(element("note-text").value)) status("请先选中一个可编辑的标注。", true);
 };
@@ -509,15 +560,25 @@ element("find-next").onclick = () => reader.find(element("search").value, "next"
 element("security").onchange = () => { element("lock-options").hidden = element("security").value !== "lock"; };
 element("source-password").onclick = () => void work(async () => {
   const source = sources[organizer.pages[selectedPage].source];
+  if (source === sources[0] && tools.objects.length) {
+    throw new Error("请先保存或撤销对象改动，再更新当前文件的密码。");
+  }
   const password = await askPassword(`输入权限密码 · ${source.name}`);
   if (password === undefined) return;
+  const primary = source === sources[0];
   await request("inspect", [{ bytes: source.bytes, password }]);
+  if (password === source.password) return;
   source.password = password;
+  for (const page of source.objectPages?.keys() ?? []) tools.setPageObjects(page, []);
+  source.objectPages = undefined;
+  if (primary && tools.tool === "object") {
+    await tools.select("select");
+    showTool();
+  }
   status("已更新所选来源的密码。");
 });
 
-element("save").onclick = () => void work(async () => {
-  status("正在保存…");
+async function capturePlan() {
   const native = await reader.capture(meta.fields);
   const used = new Set(organizer.pages.map(({ source, page }) => `${source}:${page}`));
   const marks = [...native.add, ...tools.add].filter(mark => used.has(`${mark.source}:${mark.page}`));
@@ -525,8 +586,19 @@ element("save").onclick = () => void work(async () => {
   const info = Object.fromEntries(infoFields.map(key => [key, element(key).value])
     .filter(([key, value]) => value !== (key === "keywords" ? (meta.info.keywords ?? []).join(", ") : (meta.info[key] ?? "")))
     .map(([key, value]) => [key, key === "keywords" ? value.split(",").map(word => word.trim()).filter(Boolean) : value]));
-  const plan = compactPlan({ pages: organizer.plan(), outline: outline.plan(), add: marks, remove, fill: native.fill,
+  return compactPlan({ pages: organizer.plan(), outline: outline.plan(), add: marks, remove, fill: native.fill,
+    objects: tools.objects.filter(({ page }) => used.has(`0:${page}`)), redact: tools.redact,
     info: Object.keys(info).length ? info : undefined });
+}
+
+element("save").onclick = () => void work(async () => {
+  if (tools.pendingRedactions.length && !await tools.confirmRedactions(async drafts => {
+    const count = drafts.reduce((sum, { rects }) => sum + rects.length, 0);
+    element("redact-summary").textContent = `将在 ${drafts.length} 个原始物理页上涂黑 ${count} 个区域。`;
+    return await dialogChoice("redact-dialog") === "redact";
+  })) return;
+  status("正在保存…");
+  const plan = await capturePlan();
   const security = element("security").value;
   const save = { flatten: element("flatten").checked, removePassword: security === "remove" };
   if (security === "lock") {
@@ -535,28 +607,50 @@ element("save").onclick = () => void work(async () => {
       permissions: Object.fromEntries(["print", "copy", "modify", "annotate"].map(key => [key, element(`allow-${key}`).checked])) };
   }
   const response = await request("save", sources, { plan, save });
+  await openCopy(response, save.lock?.owner ?? (save.removePassword ? undefined : sources[0].password));
+});
+
+element("searchable").onclick = () => void work(async () => {
+  if (tools.pendingRedactions.length || Object.keys(await capturePlan()).length ||
+      element("security").value !== "none" || element("flatten").checked) {
+    throw new Error("请先保存当前编辑，再生成可搜索副本。");
+  }
+  if (meta.info.encrypted) {
+    throw new Error("请先用权限密码打开，并在保存选项中去掉密码。");
+  }
+  const page = reader.pageNumber;
+  element("ocr-pages").value = String(page);
+  if (await dialogChoice("searchable-dialog") !== "convert") return;
+  status("正在本机识别所选页…");
+  const response = await request("searchable", [sources[0]], { pageSpec: element("ocr-pages").value });
+  await openCopy(response, undefined, page);
+});
+
+async function openCopy(response, password, page) {
   const blob = await response.blob();
   const name = response.headers.get("X-Output-File");
   if (downloadUrl) URL.revokeObjectURL(downloadUrl);
   downloadUrl = URL.createObjectURL(blob);
   Object.assign(element("download"), { href: downloadUrl, download: name, hidden: false });
-  const source = { bytes: new Uint8Array(await blob.arrayBuffer()), name,
-    password: save.lock?.owner ?? (save.removePassword ? undefined : sources[0].password) };
+  const source = { bytes: new Uint8Array(await blob.arrayBuffer()), name, password };
   try {
     const info = await inspect(source);
-    if (info) await open(source, info);
+    if (info) {
+      await open(source, info);
+      if (page) reader.goToPage(page);
+    }
   } catch (error) {
     status(`已保存 ${name}，自动重开失败。${error.message}`, true);
     return;
   }
   status(`已保存 ${name}`);
-});
+}
 
 void work(async () => {
   const response = await fetch("/api/source");
   if (response.status === 204) return;
   if (!response.ok) throw new Error("无法读取启动时指定的 PDF。");
   const source = { bytes: new Uint8Array(await response.arrayBuffer()), name: "启动时打开的 PDF" };
-  const info = await inspect(source);
+  const info = await inspect(source, true);
   if (info) await open(source, info);
 });

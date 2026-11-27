@@ -41,6 +41,24 @@ pub enum Error {
     FieldNotFound,
     FieldReadOnly,
     InvalidFieldValue,
+    PdfiumUnavailable,
+    ObjectNotFound {
+        page: u32,
+        id: u32,
+    },
+    ObjectNotEditable {
+        page: u32,
+        id: u32,
+    },
+    ObjectEditFailed {
+        page: u32,
+    },
+    RedactionFailed {
+        page: u32,
+    },
+    RedactionSharedImage {
+        page: u32,
+    },
     SaveFailed,
     EditTextChanged {
         page: u32,
@@ -81,6 +99,17 @@ impl fmt::Display for Error {
             Self::FieldNotFound => f.write_str("找不到指定的 PDF 表单字段。"),
             Self::FieldReadOnly => f.write_str("指定的 PDF 表单字段只读。"),
             Self::InvalidFieldValue => f.write_str("指定的 PDF 表单值无效。"),
+            Self::PdfiumUnavailable => f.write_str("当前引擎未启用 PDFium 编辑。"),
+            Self::ObjectNotFound { page, id } => write!(f, "找不到第 {page} 页的对象 {id}。"),
+            Self::ObjectNotEditable { page, id } => write!(f, "第 {page} 页的对象 {id} 无法编辑。"),
+            Self::ObjectEditFailed { page } => write!(f, "第 {page} 页的对象编辑失败。"),
+            Self::RedactionFailed { page } => {
+                write!(f, "无法确认第 {page} 页已彻底涂黑，已停止保存。")
+            }
+            Self::RedactionSharedImage { page } => write!(
+                f,
+                "第 {page} 页要涂黑的图像仍有其他引用，请把相关位置一并涂黑。"
+            ),
             Self::SaveFailed => f.write_str("PDF 保存失败。"),
             Self::EditTextChanged { page } => {
                 write!(f, "第 {page} 个输出页的文字层发生变化，已停止保存。")

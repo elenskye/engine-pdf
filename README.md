@@ -2,7 +2,7 @@
 
 Peck、Pith、Pomelo 共用的 Mac PDF 引擎。Rust 库负责读取、识别和保存编辑结果，`web/` 提供无样式的 PDF.js 编辑套件。界面、文件权限、业务数据、费用确认和记账由各 App 管理。
 
-> 当前 **v0.5.2**（页面与结构、预览级编辑）。本地放在引擎总仓库 `personal-engine-studio/` 下，是独立的 git 仓库。进度见 `ROADMAP.md`，交接见 `HANDOFF.md`。
+> 最新 tag 为 **v0.6.0**。本地放在引擎总仓库 `personal-engine-studio/` 下，是独立的 git 仓库。进度见 `ROADMAP.md`，交接见 `HANDOFF.md`。
 
 ## 能做什么
 
@@ -11,6 +11,8 @@ Peck、Pith、Pomelo 共用的 Mac PDF 引擎。Rust 库负责读取、识别和
 - **页图**：逐页读取时默认每页都附一张 1568px 的 JPEG（空白页、读失败的页除外），看不看由模型决定；任意页也能单独画成 JPEG、PNG 或灰度像素，范围和阅读器看到的一样（CropBox、带旋转）。
 - **拆页**：把指定页复制成一份新 PDF（给 Mathpix 只传这几页用）；统计哪些页有图片。
 - **本机 OCR**：扫描页在本机用 macOS Vision 识别，断网也行；简体、繁体、英文，两栏、多栏按阅读顺序拼好，另给每行的置信度和位置。`read` 里开 `Ocr::auto()` 就会自动识别没有文字层的页。
+- **可搜索扫描件**：`searchable` 在选中的扫描页写入和原字对齐的不可见文字层，「预览」、PDF.js 里能搜、能选中复制。引擎再读时交回 `Content::SearchableText`（识别时排好的阅读顺序）。
+- **移动、删除文字和图片，涂黑**（feature `pdfium`）：`Document::objects` 列出页面对象，`edit::apply` 移动或删除文字和图片，或永久涂黑选定区域。只改那几条指令，别处原样保留，交文件前核对（`docs/decisions/0019`）。涂黑先在原内容上删，删不干净就整页画成图再抹黑、补回框外的搜索层（`0018`）。
 - **Mathpix**：公式、表格这类难页——先在本地报价（第几页、预计多少钱），App 确认后只拆出、上传这几页，结果映射回原页码，不管成败都删掉 Mathpix 那边的副本；可以分步续跑。`fake` feature 给测试和模拟模式用。
 - **编辑**：一张 `edit::Plan` 表达页面重排、插入、旋转、抽页、目录、链接、文档信息、标注（高亮、下划线、删除线、便签、文本框、绘图、形状、图片、链接）和表单值。`edit::apply` 返回新 PDF 字节，保存选项还支持烧平和设置或去掉密码。在原文件的对象上改：没动到的页面内容、页标签、表单、链接原样保留。
 - **新建**：`compose::images` 把照片打包成 PDF，`compose::assemble` 拼接 PDF 并附上目录、链接或文档信息。
@@ -23,7 +25,7 @@ Peck、Pith、Pomelo 共用的 Mac PDF 引擎。Rust 库负责读取、识别和
 
 ```toml
 [dependencies]
-engine-pdf = { git = "https://github.com/elenskye/engine-pdf", tag = "v0.5.2" }
+engine-pdf = { git = "https://github.com/elenskye/engine-pdf", tag = "v0.6.0" }
 ```
 
 升级改 tag，回退改回上一个 tag。每版接口变化见 `CHANGELOG.md`。
@@ -32,12 +34,17 @@ engine-pdf = { git = "https://github.com/elenskye/engine-pdf", tag = "v0.5.2" }
 
 ## 开发
 
-安装 Node.js 22.13 或更新版本及 pnpm，首次运行先安装 Web 依赖。
+安装 Node.js 22.13 或更新版本及 pnpm。首次跑 macOS 全套检查时，在项目内准备 PDFium 预编译静态库。以下命令适用于 Apple Silicon。
 
 ```bash
 pnpm --dir web install --frozen-lockfile
+mkdir -p local/pdfium
+curl -fL https://github.com/libviprs/libviprs-dep/releases/download/pdfium-8085/pdfium-mac-arm64.tgz |
+  tar -xz -C local/pdfium
 ./scripts/check.sh
 ```
+
+在其他目录准备了静态库时，将 `PDFIUM_STATIC_LIB_PATH` 指向 `libpdfium.a` 所在的绝对路径。App 开启 `pdfium` 时同样使用该环境变量，具体见 `docs/decisions/0010`。
 
 ## 本地试用页
 
@@ -47,7 +54,17 @@ cargo run --features samples --example make_samples
 cargo run --release --example studio -- samples/out/mixed.pdf
 ```
 
-用浏览器打开终端打印的 `127.0.0.1` 地址。也可省略 PDF 路径，再在页面中选择文件。试用页把改动单交给 Rust，保存后自动打开 `local/studio/` 下的新副本。用 `form.pdf` 试文本框、勾选、单选和下拉，再在保存选项中设置密码。完整验收清单见 `ROADMAP.md`。
+用浏览器打开终端打印的 `127.0.0.1` 地址。也可省略 PDF 路径，再在页面中选择文件。保存后自动打开 `local/studio/` 下的新副本。
+
+- 「生成可搜索副本」用本机 Vision 识别指定物理页。用 `mixed.pdf` 试第 2 页，保存后可查找 `quiet valley`。有未保存编辑时，先保存并在重开的副本上选页。加密 PDF 需先用权限密码保存一份去密码的副本。
+- 「选对象」点选、框选、拖动或删除文字和图片；「涂黑」画草稿框，保存前确认。这两项要开 `pdfium`：
+
+```bash
+PDFIUM_STATIC_LIB_PATH="$PWD/local/pdfium/pdfium-mac-arm64/lib" \
+  cargo run --release --features pdfium --example studio -- samples/out/mixed.pdf
+```
+
+用 `form.pdf` 试文本框、勾选、单选和下拉，再在保存选项中设置密码。完整验收清单见 `ROADMAP.md`。
 
 ## 样本和读取验证
 

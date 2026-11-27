@@ -5,7 +5,8 @@ use serde_json::{Value, json};
 fn shared_plan_fixtures_round_trip() {
     let structure = include_str!("fixtures/plan/structure.json");
     let annotations = include_str!("fixtures/plan/annotations.json");
-    for fixture in [structure, annotations] {
+    let content = include_str!("fixtures/plan/content.json");
+    for fixture in [structure, annotations, content] {
         let json: Value = serde_json::from_str(fixture).unwrap();
         let plan: Plan = serde_json::from_value(json.clone()).unwrap();
         assert_eq!(serde_json::to_value(plan).unwrap(), json);

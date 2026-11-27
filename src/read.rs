@@ -96,6 +96,8 @@ pub struct Page {
 pub enum Content {
     /// 文字层就能代表这一页：字数够、不是乱码；或者页面上除了这几个字别无他物（只有页码、一句标题的页）。
     Text(String),
+    /// 引擎先前在本机识别并写入 PDF 的文字，保留识别时的阅读顺序。
+    SearchableText(String),
     /// 文字层不足或乱码，用 Vision 识别出了文字。
     Ocr(OcrText),
     /// 空白页：没有文字层，页面几乎全白。
@@ -132,6 +134,7 @@ pub enum Flow {
 pub struct Summary {
     pub processed: usize,
     pub text: usize,
+    /// 本次识别或从 PDF 中读回先前识别结果的页数。
     pub ocr: usize,
     pub blank: usize,
     pub no_text: usize,
@@ -168,7 +171,8 @@ pub fn read_each(
     for &index in pages {
         cancel.check()?;
         let (label, mut content) = match doc.page(index) {
-            Ok((label, text)) => {
+            Ok((label, text, true)) => (label, Content::SearchableText(text)),
+            Ok((label, text, false)) => {
                 let content = match classify(doc, index, text, opts, cancel) {
                     Ok(content) => content,
                     Err(Error::Cancelled) => return Err(Error::Cancelled),
@@ -197,7 +201,7 @@ pub fn read_each(
         summary.processed += 1;
         match &content {
             Content::Text(_) => summary.text += 1,
-            Content::Ocr(_) => summary.ocr += 1,
+            Content::Ocr(_) | Content::SearchableText(_) => summary.ocr += 1,
             Content::Blank => summary.blank += 1,
             Content::NoText { .. } => summary.no_text += 1,
             Content::Failed(_) => summary.failed += 1,
@@ -215,7 +219,7 @@ pub fn read_each(
     Ok(summary)
 }
 
-fn classify(
+pub(crate) fn classify(
     doc: &Document,
     index: u32,
     text: String,

@@ -122,6 +122,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         elapsed += duration;
         let (kind, chars) = match &page.content {
             Content::Text(text) => ("Text", text.chars().filter(|c| !c.is_whitespace()).count()),
+            Content::SearchableText(text) => (
+                "SearchableText",
+                text.chars().filter(|c| !c.is_whitespace()).count(),
+            ),
             Content::Ocr(ocr) => (
                 "Ocr",
                 ocr.text.chars().filter(|c| !c.is_whitespace()).count(),
@@ -152,6 +156,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             (
                 true,
                 Content::Text(text)
+                | Content::SearchableText(text)
                 | Content::Ocr(engine_pdf::OcrText { text, .. })
                 | Content::NoText { partial: text, .. },
             ) if !text.trim().is_empty() => {

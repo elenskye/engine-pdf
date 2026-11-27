@@ -1,17 +1,20 @@
-use objc2::AnyThread;
+use std::ptr::null_mut;
+
 use objc2::rc::{Retained, autoreleasepool};
+use objc2::{AnyThread, msg_send};
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{
     CGAffineTransformInvert, CGBitmapContextCreateImage, CGContext, CGImage,
     CGRectApplyAffineTransform,
 };
-use objc2_foundation::{NSArray, NSDictionary, NSString};
+use objc2_foundation::{NSArray, NSDictionary, NSError, NSRange, NSString};
 use objc2_pdf_kit::{PDFDisplayBox, PDFPage};
 use objc2_vision::{
-    VNImageRequestHandler, VNRecognizeTextRequest, VNRecognizedTextObservation, VNRequest,
-    VNRequestTextRecognitionLevel,
+    VNImageRequestHandler, VNRecognizeTextRequest, VNRecognizedTextObservation,
+    VNRectangleObservation, VNRequest, VNRequestTextRecognitionLevel,
 };
 
+use crate::ocr::Observation;
 use crate::{Error, ImageFormat, OcrBounds, OcrLine, OcrOptions};
 
 use super::render::{draw_page, white_bitmap};
@@ -20,7 +23,8 @@ pub(super) fn recognize_page(
     page: &PDFPage,
     index: u32,
     options: &OcrOptions,
-) -> Result<Vec<(OcrLine, OcrBounds)>, Error> {
+    character_positions: bool,
+) -> Result<Vec<Observation>, Error> {
     let (bitmap, display_size) = draw_page(page, index, ImageFormat::Gray, 2400)?;
     let image = CGBitmapContextCreateImage(Some(&bitmap)).ok_or(Error::Render { page: index })?;
     let observations = recognize(&image, index, options)?;
@@ -50,6 +54,54 @@ pub(super) fn recognize_page(
             ),
         );
         let pdf = CGRectApplyAffineTransform(display, display_to_pdf);
+        let mut spans = Vec::new();
+        if character_positions && visual.size.width > 0.0 {
+            let mut utf16 = 0;
+            let mut previous_end: f64 = 0.0;
+            for (position, ch) in text.chars().enumerate() {
+                let length = ch.len_utf16();
+                let range = NSRange::new(utf16, length);
+                utf16 += length;
+                if ch.is_whitespace() {
+                    continue;
+                }
+                // SAFETY: UTF-16 范围来自 candidate 自己的字符串，错误出参可为空。
+                let rect: Option<Retained<VNRectangleObservation>> = unsafe {
+                    msg_send![&*candidate, boundingBoxForRange: range, error: null_mut::<*mut NSError>()]
+                };
+                let Some(rect) = rect else {
+                    continue;
+                };
+                // SAFETY: rect 是 Vision 为该字符串范围返回的观察对象。
+                let rect = unsafe { rect.boundingBox() };
+                if rect.size.width <= 0.0 {
+                    continue;
+                }
+                let start = (rect.origin.x - visual.origin.x) / visual.size.width;
+                let end = start + rect.size.width / visual.size.width;
+                // 相同或倒序的框无法单独定位字符，保留整行的文字和位置。
+                if spans.last().is_some_and(|&(left, _)| start <= left) {
+                    spans.clear();
+                    break;
+                }
+                let missing = position - spans.len();
+                let step = (start - previous_end).max(0.0001) / missing.max(1) as f64;
+                for _ in 0..missing {
+                    spans.push((previous_end, previous_end + step));
+                    previous_end += step;
+                }
+                spans.push((start, end));
+                previous_end = end;
+            }
+            if !spans.is_empty() {
+                let missing = text.chars().count() - spans.len();
+                let step = (1.0 - previous_end).max(0.0001) / missing.max(1) as f64;
+                for _ in 0..missing {
+                    spans.push((previous_end, previous_end + step));
+                    previous_end += step;
+                }
+            }
+        }
         lines.push((
             OcrLine {
                 text,
@@ -67,6 +119,7 @@ pub(super) fn recognize_page(
                 width: visual.size.width,
                 height: visual.size.height,
             },
+            spans,
         ));
     }
     Ok(lines)

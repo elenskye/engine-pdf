@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use engine_pdf::edit::{self, Lock, Permissions, Plan, Save};
-use engine_pdf::{Cancel, Document, Error};
+use engine_pdf::{Cancel, Document, Error, OcrOptions, pages, searchable};
 use serde::Deserialize;
 use zeroize::Zeroizing;
 
@@ -24,6 +24,7 @@ struct Request {
     lengths: Vec<usize>,
     passwords: Vec<Option<Zeroizing<String>>>,
     page: u32,
+    page_spec: Option<String>,
     plan: Plan,
     save: SaveRequest,
 }
@@ -163,6 +164,14 @@ fn serve(stream: &mut TcpStream, authority: &str, initial: Option<&[u8]>) -> io:
     }
 }
 
+fn open_pdf(bytes: &[u8], password: Option<&Zeroizing<String>>) -> Result<Document, String> {
+    match password {
+        Some(password) => Document::from_bytes_with_password(bytes, password),
+        None => Document::from_bytes(bytes),
+    }
+    .map_err(|error| error.to_string())
+}
+
 fn handle(path: &str, body: &[u8]) -> Result<(Vec<u8>, Option<String>), String> {
     let format = || "请求格式有误。".to_owned();
     let length = u32::from_le_bytes(body.get(..4).ok_or_else(format)?.try_into().unwrap()) as usize;
@@ -171,22 +180,17 @@ fn handle(path: &str, body: &[u8]) -> Result<(Vec<u8>, Option<String>), String> 
     if request.lengths.is_empty() || request.passwords.len() != request.lengths.len() {
         return Err(format());
     }
-    let mut docs = Vec::with_capacity(request.lengths.len());
+    let mut files = Vec::with_capacity(request.lengths.len());
     for (length, password) in request.lengths.into_iter().zip(request.passwords) {
         let (source, rest) = bytes.split_at_checked(length).ok_or_else(format)?;
         bytes = rest;
-        docs.push(
-            match password.as_ref() {
-                Some(password) => Document::from_bytes_with_password(source, password),
-                None => Document::from_bytes(source),
-            }
-            .map_err(|error| error.to_string())?,
-        );
+        files.push((source, password));
     }
     if !bytes.is_empty() {
         return Err(format());
     }
-    let (doc, others) = docs.split_first().ok_or_else(format)?;
+    let ((source, password), others) = files.split_first().ok_or_else(format)?;
+    let doc = open_pdf(source, password.as_ref())?;
     let cancel = Cancel::new();
     match path {
         "/api/inspect" => {
@@ -199,7 +203,7 @@ fn handle(path: &str, body: &[u8]) -> Result<(Vec<u8>, Option<String>), String> 
             };
             let meta = serde_json::json!({
                 "pageCount": doc.page_count(), "info": doc.info(), "outline": doc.outline(),
-                "fields": fields, "formError": form_error,
+                "fields": fields, "formError": form_error, "pdfium": cfg!(feature = "pdfium"),
             });
             Ok((serde_json::to_vec(&meta).map_err(|_| format())?, None))
         }
@@ -212,6 +216,38 @@ fn handle(path: &str, body: &[u8]) -> Result<(Vec<u8>, Option<String>), String> 
                 None,
             ))
         }
+        // 对象编号只由文件字节决定：同一份字节每次列出的编号都一样，保存时再打开也对得上。
+        "/api/objects" if others.is_empty() => {
+            #[cfg(feature = "pdfium")]
+            {
+                let objects = doc
+                    .objects(request.page)
+                    .map_err(|error| error.to_string())?;
+                Ok((
+                    serde_json::to_vec(&serde_json::json!({ "objects": objects }))
+                        .map_err(|_| format())?,
+                    None,
+                ))
+            }
+            #[cfg(not(feature = "pdfium"))]
+            Err(Error::PdfiumUnavailable.to_string())
+        }
+        "/api/searchable" if others.is_empty() => {
+            let spec = request
+                .page_spec
+                .as_deref()
+                .filter(|spec| !spec.trim().is_empty())
+                .ok_or_else(|| "请至少选择一页。".to_owned())?;
+            let total = doc.page_count();
+            let selected = pages::parse(Some(spec), total, total as usize)
+                .map_err(|error| error.to_string())?;
+            if selected.is_empty() {
+                return Err("请至少选择一页。".into());
+            }
+            let bytes = searchable(&doc, &selected, &OcrOptions::default(), &cancel, &|_| {})
+                .map_err(|error| error.to_string())?;
+            write_copy(bytes, "searchable")
+        }
         "/api/save" => {
             let save = Save {
                 flatten: request.save.flatten,
@@ -222,34 +258,42 @@ fn handle(path: &str, body: &[u8]) -> Result<(Vec<u8>, Option<String>), String> 
                     permissions: lock.permissions,
                 }),
             };
-            let others: Vec<_> = others.iter().collect();
-            let bytes = edit::apply(doc, &others, &request.plan, &save, &cancel)
+            let documents = others
+                .iter()
+                .map(|(bytes, password)| open_pdf(bytes, password.as_ref()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let others: Vec<_> = documents.iter().collect();
+            let bytes = edit::apply(&doc, &others, &request.plan, &save, &cancel)
                 .map_err(|error| error.to_string())?;
-            let time = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
-            let name = format!("edited-{time}.pdf");
-            fs::create_dir_all(OUTPUT)
-                .and_then(|()| {
-                    let path = Path::new(OUTPUT).join(&name);
-                    let mut options = OpenOptions::new();
-                    options.write(true).create_new(true);
-                    #[cfg(unix)]
-                    options.mode(0o600);
-                    let mut file = options.open(&path)?;
-                    if let Err(error) = file.write_all(&bytes) {
-                        drop(file);
-                        let _ = fs::remove_file(path);
-                        return Err(error);
-                    }
-                    Ok(())
-                })
-                .map_err(|_| "无法写入试用页输出目录。".to_owned())?;
-            Ok((bytes, Some(name)))
+            write_copy(bytes, "edited")
         }
         _ => Err("找不到此操作。".into()),
     }
+}
+
+fn write_copy(bytes: Vec<u8>, prefix: &str) -> Result<(Vec<u8>, Option<String>), String> {
+    let time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let name = format!("{prefix}-{time}.pdf");
+    fs::create_dir_all(OUTPUT)
+        .and_then(|()| {
+            let path = Path::new(OUTPUT).join(&name);
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            options.mode(0o600);
+            let mut file = options.open(&path)?;
+            if let Err(error) = file.write_all(&bytes) {
+                drop(file);
+                let _ = fs::remove_file(path);
+                return Err(error);
+            }
+            Ok(())
+        })
+        .map_err(|_| "无法写入试用页输出目录。".to_owned())?;
+    Ok((bytes, Some(name)))
 }
 
 fn static_file(stream: &mut TcpStream, path: &str) -> io::Result<()> {

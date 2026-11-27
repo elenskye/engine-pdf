@@ -7,6 +7,11 @@ export interface Stroke { width: number; color: Color }
 export interface Pick { source: number; page: number; rotate: number }
 export interface MarkId { source: number; page: number; index: number }
 export interface MarkLocation { source: number; page: number; rect: Rect; author?: string; contents?: string }
+export interface PageObject { id: number; kind: "text" | "image" | "path" | "other"; bounds: Rect; text?: string }
+export type ObjectOp =
+  | { kind: "move"; page: number; id: number; dx: number; dy: number }
+  | { kind: "delete"; page: number; id: number };
+export interface Redaction { page: number; rects: Rect[] }
 
 export type Shape = { kind: "rectangle" | "ellipse" }
   | { kind: "line" | "arrow"; start: Point; end: Point };
@@ -58,6 +63,8 @@ export interface Plan {
   add?: Mark[];
   remove?: MarkId[];
   fill?: Fill[];
+  objects?: ObjectOp[];
+  redact?: Redaction[];
   outline?: OutlineItem[];
   info?: InfoPatch;
 }
@@ -80,6 +87,8 @@ export function compactPlan(plan: Plan): Plan {
     ...(plan.add?.length && { add: plan.add }),
     ...(plan.remove?.length && { remove: plan.remove }),
     ...(plan.fill?.length && { fill: plan.fill }),
+    ...(plan.objects?.length && { objects: plan.objects }),
+    ...(plan.redact?.length && { redact: plan.redact }),
     ...(plan.outline !== undefined && { outline: plan.outline }),
     ...(plan.info !== undefined && { info: plan.info }),
   };

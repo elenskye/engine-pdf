@@ -18,7 +18,7 @@ mod sys;
 pub use cancel::Cancel;
 pub use document::{Document, Image, ImageFormat};
 pub use error::Error;
-pub use ocr::{OcrBounds, OcrLine, OcrOptions, OcrReason, OcrText};
+pub use ocr::{OcrBounds, OcrLine, OcrOptions, OcrReason, OcrText, searchable};
 pub use read::{
     Content, Flow, NoTextReason, Ocr, Page, ReadOptions, Render, Summary, read, read_each,
 };
@@ -30,6 +30,6 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 mod tests {
     #[test]
     fn version_matches_manifest() {
-        assert_eq!(super::VERSION, "0.5.2");
+        assert_eq!(super::VERSION, "0.6.0");
     }
 }

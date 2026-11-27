@@ -1,13 +1,19 @@
-use std::ptr::{NonNull, null_mut};
+use std::{
+    ffi::CStr,
+    ptr::{NonNull, null_mut},
+};
 
 use objc2::AnyThread;
 use objc2::rc::{Retained, autoreleasepool};
-use objc2_core_graphics::{CGPDFArray, CGPDFDictionary, CGPDFDocument};
+use objc2_core_graphics::{CGPDFArray, CGPDFDictionary, CGPDFDocument, CGPDFPage, CGPDFStream};
 use objc2_foundation::{NSCopying, NSData, NSString};
 use objc2_pdf_kit::{PDFDocument, PDFDocumentPermissions, PDFPage};
 use zeroize::Zeroizing;
 
-use crate::{Cancel, Error, Image, ImageFormat, OcrBounds, OcrLine, OcrOptions};
+use crate::ocr::Observation;
+use crate::{Cancel, Error, Image, ImageFormat, OcrOptions};
+
+pub(super) const OCR_TEXT_KEY: &CStr = c"EnginePDFOCRText";
 
 // PDFDocument 自身 !Send / !Sync。
 pub(crate) struct Pdf {
@@ -148,9 +154,29 @@ impl Pdf {
         self.with_page(page, |page| Ok(text(page)))
     }
 
-    pub(crate) fn page(&self, page: u32) -> Result<(Option<String>, String), Error> {
+    pub(crate) fn page(&self, page: u32) -> Result<(Option<String>, String, bool), Error> {
         self.with_page(page, |page| {
-            Ok((if self.has_labels { label(page) } else { None }, text(page)))
+            let label = if self.has_labels { label(page) } else { None };
+            // SAFETY: 字典和流都属于当前页的 CoreGraphics 对象，在取出流数据前保持存活。
+            let embedded = unsafe {
+                page.pageRef().and_then(|reference| {
+                    let dictionary = CGPDFPage::dictionary(Some(&reference));
+                    let mut stream = null_mut();
+                    let key = NonNull::from(OCR_TEXT_KEY).cast();
+                    if CGPDFDictionary::stream(dictionary, key, &mut stream) {
+                        CGPDFStream::data(stream, null_mut())
+                    } else {
+                        None
+                    }
+                })
+            };
+            if let Some(ordered) = embedded
+                .and_then(|data| String::from_utf8(data.to_vec()).ok())
+                .filter(|text| !text.trim().is_empty())
+            {
+                return Ok((label, ordered, true));
+            }
+            Ok((label, text(page), false))
         })
     }
 
@@ -169,9 +195,10 @@ impl Pdf {
         &self,
         page: u32,
         options: &OcrOptions,
-    ) -> Result<Vec<(OcrLine, OcrBounds)>, Error> {
+        character_positions: bool,
+    ) -> Result<Vec<Observation>, Error> {
         self.with_page(page, |native_page| {
-            super::ocr::recognize_page(native_page, page, options)
+            super::ocr::recognize_page(native_page, page, options, character_positions)
         })
     }
 

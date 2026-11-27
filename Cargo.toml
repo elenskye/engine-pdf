@@ -1,6 +1,6 @@
 [package]
 name = "engine-pdf"
-version = "0.5.2"
+version = "0.6.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Peck、Pith、Pomelo 共用的 Mac PDF 引擎：打开、取字、渲染、本机 OCR、Mathpix 识别"
@@ -9,6 +9,7 @@ publish = false
 
 [features]
 fake = ["dep:zip"]
+pdfium = ["dep:pdfium-render"]
 samples = ["dep:objc2-core-text", "objc2-core-foundation/CFAttributedString", "objc2-core-foundation/CFDictionary", "objc2-core-foundation/CFString"]
 
 [dependencies]
@@ -19,6 +20,7 @@ zip = { version = "^4.6.1", optional = true, default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 lopdf = { version = "^0.42.0", default-features = false }
+pdfium-render = { version = "^0.9.6", optional = true, default-features = false, features = ["pdfium_7881", "static", "libc++", "core_graphics", "thread_safe"] }
 objc2 = "^0.6.5"
 objc2-foundation = { version = "^0.3.2", default-features = false, features = ["std", "NSArray", "NSData", "NSDate", "NSDictionary", "NSEnumerator", "NSString", "NSURL", "NSUUID", "NSValue"] }
 objc2-pdf-kit = { version = "^0.3.2", default-features = false, features = ["std", "PDFAction", "PDFActionGoTo", "PDFActionURL", "PDFAnnotation", "PDFAnnotationUtilities", "PDFBorder", "PDFDestination", "PDFDocument", "PDFOutline", "PDFPage", "objc2-app-kit", "objc2-core-foundation", "objc2-core-graphics"] }

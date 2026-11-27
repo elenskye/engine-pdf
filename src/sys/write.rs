@@ -339,6 +339,8 @@ fn compose(
             b"Thumb",
             b"VP",
             b"Metadata",
+            // 可搜索副本存的识别文字（阅读顺序），换页序后照样读回。
+            super::pdf::OCR_TEXT_KEY.to_bytes(),
         ] {
             if let Ok(value) = original.get(key) {
                 page.set(key, value.clone());

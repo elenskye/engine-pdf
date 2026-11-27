@@ -1,7 +1,11 @@
 #[cfg(target_os = "macos")]
 mod annotation;
+#[cfg(all(target_os = "macos", feature = "pdfium"))]
+mod check;
 #[cfg(target_os = "macos")]
 mod compose;
+#[cfg(all(target_os = "macos", feature = "pdfium"))]
+mod content;
 #[cfg(target_os = "macos")]
 mod edit;
 #[cfg(target_os = "macos")]
@@ -18,12 +22,20 @@ mod ocr;
 mod password;
 #[cfg(target_os = "macos")]
 mod pdf;
+#[cfg(all(target_os = "macos", feature = "pdfium"))]
+mod pdfium;
+#[cfg(all(target_os = "macos", feature = "pdfium"))]
+mod redact;
 #[cfg(target_os = "macos")]
 mod render;
 #[cfg(all(target_os = "macos", feature = "samples"))]
 mod samples;
 #[cfg(target_os = "macos")]
+mod searchable;
+#[cfg(target_os = "macos")]
 mod stamp;
+#[cfg(all(target_os = "macos", feature = "pdfium"))]
+mod tags;
 #[cfg(target_os = "macos")]
 mod write;
 
@@ -39,10 +51,18 @@ pub(crate) use forms::fields;
 pub(crate) use ocr::warm_up;
 #[cfg(target_os = "macos")]
 pub(crate) use pdf::Pdf;
+#[cfg(all(target_os = "macos", feature = "pdfium"))]
+pub(crate) use pdfium::page_objects;
+#[cfg(target_os = "macos")]
+pub(crate) use searchable::searchable;
+#[cfg(all(not(target_os = "macos"), feature = "pdfium"))]
+pub(crate) use unsupported::page_objects;
 #[cfg(not(target_os = "macos"))]
 mod unsupported;
 #[cfg(not(target_os = "macos"))]
-pub(crate) use unsupported::{Pdf, annotations, apply, fields, images, info, outline, warm_up};
+pub(crate) use unsupported::{
+    Pdf, annotations, apply, fields, images, info, outline, searchable, warm_up,
+};
 
 #[cfg(feature = "samples")]
 pub(crate) use samples::generate;

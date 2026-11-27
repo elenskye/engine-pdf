@@ -1,0 +1,14 @@
+{
+  "objects": [
+    { "kind": "move", "page": 1, "id": 3, "dx": 24.0, "dy": -18.0 },
+    { "kind": "delete", "page": 2, "id": 4 }
+  ],
+  "redact": [
+    {
+      "page": 2,
+      "rects": [
+        { "x": 30.0, "y": 50.0, "width": 75.0, "height": 22.0 }
+      ]
+    }
+  ]
+}

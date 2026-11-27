@@ -58,3 +58,15 @@ test("原生标注序列化与控件状态生成同一套标注、填表改动�
   ], new Map([["name", [{ id: "text" }]], ["agree", [{ id: "checkbox", exportValues: "Yes" }]]]), storage);
   assert.deepEqual(compactPlan({ ...captured, fill }), fixture("annotations"));
 });
+
+test("对象编辑和已确认的涂黑写入共享改动单", () => {
+  const plan = compactPlan({
+    objects: [
+      { kind: "move", page: 1, id: 3, dx: 24, dy: -18 },
+      { kind: "delete", page: 2, id: 4 },
+    ],
+    redact: [{ page: 2, rects: [{ x: 30, y: 50, width: 75, height: 22 }] }],
+  });
+  assert.deepEqual(plan, fixture("content"));
+  assert.deepEqual(compactPlan({ objects: [], redact: [] }), {});
+});

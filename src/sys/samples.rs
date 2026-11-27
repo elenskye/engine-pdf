@@ -344,7 +344,7 @@ mod tests {
             let pdf = Pdf::from_bytes(&sample.generate().unwrap()).unwrap();
             assert_eq!(pdf.page_count(), count, "{sample:?}");
             for page in 1..=count {
-                let (label, text) = pdf.page(page).unwrap();
+                let (label, text, _) = pdf.page(page).unwrap();
                 if sample == Labels {
                     assert_eq!(
                         label.as_deref(),

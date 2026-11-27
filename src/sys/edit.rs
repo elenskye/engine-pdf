@@ -141,6 +141,9 @@ pub(crate) fn apply(
     if save.remove_password && save.lock.is_some() {
         return Err(Error::InvalidPasswordOptions);
     }
+    if !cfg!(feature = "pdfium") && (!plan.objects.is_empty() || !plan.redact.is_empty()) {
+        return Err(Error::PdfiumUnavailable);
+    }
     let changes_structure = plan.pages.is_some()
         || !plan.add.is_empty()
         || !plan.remove.is_empty()
@@ -150,6 +153,8 @@ pub(crate) fn apply(
             .as_ref()
             .is_some_and(|patch| *patch != InfoPatch::default());
     if !changes_structure
+        && plan.objects.is_empty()
+        && plan.redact.is_empty()
         && plan.fill.is_empty()
         && !save.flatten
         && !save.remove_password
@@ -201,6 +206,9 @@ pub(crate) fn apply(
     if !selected[0] && !plan.fill.is_empty() {
         return Err(Error::FieldNotFound);
     }
+    if !selected[0] && (!plan.objects.is_empty() || !plan.redact.is_empty()) {
+        return Err(Error::InvalidSource { source: 0 });
+    }
     // 页序与原文件相同（可以带旋转）时直接改原文件；连旋转也没有时表单可以保持可填。
     let in_place = picks.len() == doc.page_count() as usize
         && picks
@@ -237,6 +245,16 @@ pub(crate) fn apply(
             }
             bytes = Some(clear);
         }
+        #[cfg(feature = "pdfium")]
+        if index == 0 && !plan.objects.is_empty() {
+            let input = bytes.as_deref().unwrap_or_else(|| source.original_bytes());
+            bytes = Some(super::pdfium::edit_objects(
+                input,
+                &plan.objects,
+                source.page_count(),
+                cancel,
+            )?);
+        }
         if index == 0 && !plan.fill.is_empty() {
             let input = bytes.as_deref().unwrap_or_else(|| source.original_bytes());
             bytes = Some(forms::fill(input, &plan.fill, cancel)?);
@@ -260,6 +278,10 @@ pub(crate) fn apply(
     };
     if save.flatten {
         bytes = super::flatten::flatten(&bytes, false, cancel)?;
+    }
+    #[cfg(feature = "pdfium")]
+    if !plan.redact.is_empty() {
+        bytes = super::redact::apply(&bytes, &plan.redact, picks, doc.page_count(), cancel)?;
     }
     if let Some(lock) = &save.lock {
         bytes = password::encrypt(&bytes, lock, cancel)?;

@@ -64,6 +64,13 @@ impl Document {
         crate::sys::annotations(&self.0, page)
     }
 
+    /// 列出该页的页面对象（PDFium 读取）。可见的文字和图片可通过 `edit::Plan::objects` 移动或删除；
+    /// 改动只写在这几个对象的指令上，页面其余内容原样保留（`decisions/0019`）。
+    #[cfg(feature = "pdfium")]
+    pub fn objects(&self, page: u32) -> Result<Vec<crate::edit::PageObject>, Error> {
+        crate::sys::page_objects(&self.0, page)
+    }
+
     /// 读取逻辑表单字段及其各个控件位置。
     pub fn fields(&self, cancel: &Cancel) -> Result<Vec<crate::edit::Field>, Error> {
         cancel.check()?;
@@ -84,7 +91,8 @@ impl Document {
     /// 在本机识别指定物理页，使用最长边 2400 像素的灰度页图。
     /// 没有识别出字时，结果的文字和行列表为空。
     pub fn ocr(&self, page: u32, opts: &OcrOptions) -> Result<OcrText, Error> {
-        self.0.ocr(page, opts).map(ocr::assemble)
+        let (result, _) = ocr::assemble(self.0.ocr(page, opts, false)?);
+        Ok(result)
     }
 
     /// 输出白底页图，最长边为 `max_side` 像素。画的是 CropBox（阅读器显示的范围），带页面旋转。
@@ -108,7 +116,7 @@ impl Document {
         self.0.split(pages, cancel)
     }
 
-    pub(crate) fn page(&self, page: u32) -> Result<(Option<String>, String), Error> {
+    pub(crate) fn page(&self, page: u32) -> Result<(Option<String>, String, bool), Error> {
         self.0.page(page)
     }
 

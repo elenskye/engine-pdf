@@ -4,9 +4,9 @@
 //! 横向空白处上下分开；两样都没有就是一块正文，从上到下、同一行从左到右。多栏靠递归一层层分开。
 //! 坐标用 Vision 的归一化坐标（0–1，左下原点）。
 
-use super::{OcrBounds, OcrLine, OcrReason, OcrText};
+use super::{CharacterSpans, Observation, OcrBounds, OcrReason, OcrText};
 
-type Item = (OcrLine, OcrBounds);
+type Item = Observation;
 
 /// 行框左右各放宽这么多再找栏缝（页宽的比例）。
 const HALF_GAP: f64 = 0.004;
@@ -15,27 +15,35 @@ const BODY_WIDTH: f64 = 0.12;
 /// 栏缝两边各至少要有这么多行正文，才算分栏。
 const BODY_LINES: usize = 3;
 
-pub(crate) fn assemble(lines: Vec<Item>) -> OcrText {
-    let confidence =
-        lines.iter().map(|(line, _)| line.confidence).sum::<f32>() / lines.len().max(1) as f32;
+pub(crate) fn assemble(lines: Vec<Item>) -> (OcrText, Vec<CharacterSpans>) {
+    let confidence = lines
+        .iter()
+        .map(|(line, _, _)| line.confidence)
+        .sum::<f32>()
+        / lines.len().max(1) as f32;
     let mut blocks = Vec::new();
     cut(lines, &mut blocks);
 
     let mut text = String::new();
     let mut ordered = Vec::new();
+    let mut spans = Vec::new();
     for mut block in blocks {
         if !text.is_empty() {
             text.push_str("\n\n");
         }
         write_block(&mut block, &mut text);
-        ordered.extend(block.into_iter().map(|(line, _)| line));
+        for (line, _, characters) in block {
+            ordered.push(line);
+            spans.push(characters);
+        }
     }
-    OcrText {
+    let result = OcrText {
         text,
         why: OcrReason::Requested,
         confidence,
         lines: ordered,
-    }
+    };
+    (result, spans)
 }
 
 /// 递归切块，按阅读顺序把块放进 `out`。
@@ -65,7 +73,7 @@ fn cut(lines: Vec<Item>, out: &mut Vec<Vec<Item>>) {
             cut(part, out);
         }
     } else if let Some(y) = widest_row_gap(&lines) {
-        let (upper, lower) = lines.into_iter().partition(|(_, b)| mid_y(*b) > y);
+        let (upper, lower) = lines.into_iter().partition(|(_, b, _)| mid_y(*b) > y);
         cut(upper, out);
         cut(lower, out);
     } else {
@@ -83,15 +91,18 @@ struct Split {
 /// 找竖直栏缝：两边都有几行正文、上下有重叠（并排，而不是一上一下）；跨过栏缝的行只能在并排区域的上面
 /// （通栏标题）或下面（页脚）。有几条时取最靠中间的，多栏靠递归一层层分开。
 fn gutter(lines: &[Item]) -> Option<Split> {
-    let left_edge = lines.iter().map(|(_, b)| b.x).fold(f64::INFINITY, f64::min);
+    let left_edge = lines
+        .iter()
+        .map(|(_, b, _)| b.x)
+        .fold(f64::INFINITY, f64::min);
     let right_edge = lines
         .iter()
-        .map(|(_, b)| b.x + b.width)
+        .map(|(_, b, _)| b.x + b.width)
         .fold(f64::NEG_INFINITY, f64::max);
     let center = (left_edge + right_edge) / 2.0;
     let mut candidates: Vec<f64> = lines
         .iter()
-        .flat_map(|(_, b)| [b.x - HALF_GAP, b.x + b.width + HALF_GAP])
+        .flat_map(|(_, b, _)| [b.x - HALF_GAP, b.x + b.width + HALF_GAP])
         .filter(|&x| left_edge < x && x < right_edge)
         .collect();
     candidates.sort_by(|a, b| (a - center).abs().total_cmp(&(b - center).abs()));
@@ -102,7 +113,7 @@ fn split_at(lines: &[Item], x: f64) -> Option<Split> {
     let crosses = |b: &OcrBounds| b.x - HALF_GAP < x && x < b.x + b.width + HALF_GAP;
     let side = |left: bool| {
         let (mut count, mut low, mut high) = (0, f64::INFINITY, f64::NEG_INFINITY);
-        for (_, b) in lines {
+        for (_, b, _) in lines {
             if b.width >= BODY_WIDTH && !crosses(b) && (b.x < x) == left {
                 count += 1;
                 low = low.min(mid_y(*b));
@@ -117,7 +128,7 @@ fn split_at(lines: &[Item], x: f64) -> Option<Split> {
         return None;
     }
     let (mut header, mut footer) = (f64::INFINITY, f64::NEG_INFINITY);
-    for (_, b) in lines.iter().filter(|(_, b)| crosses(b)) {
+    for (_, b, _) in lines.iter().filter(|(_, b, _)| crosses(b)) {
         let y = mid_y(*b);
         if y > top {
             header = header.min(y);
@@ -133,10 +144,13 @@ fn split_at(lines: &[Item], x: f64) -> Option<Split> {
 /// 最宽的横向空白（没有任何行占着的一段高度）的中线。只认比一行字高还宽的空白（标题和正文、段落和段落之间），
 /// 普通行距不算——和 `write_block` 空一行的规则一致，所以切不切这一刀不改变单栏的输出。
 fn widest_row_gap(lines: &[Item]) -> Option<f64> {
-    let mut heights: Vec<f64> = lines.iter().map(|(_, b)| b.height).collect();
+    let mut heights: Vec<f64> = lines.iter().map(|(_, b, _)| b.height).collect();
     heights.sort_by(f64::total_cmp);
     let line_height = heights[heights.len() / 2];
-    let mut spans: Vec<(f64, f64)> = lines.iter().map(|(_, b)| (b.y, b.y + b.height)).collect();
+    let mut spans: Vec<(f64, f64)> = lines
+        .iter()
+        .map(|(_, b, _)| (b.y, b.y + b.height))
+        .collect();
     spans.sort_by(|a, b| b.1.total_cmp(&a.1));
     let mut best: Option<(f64, f64)> = None;
     let mut floor = spans[0].0;
@@ -153,18 +167,21 @@ fn widest_row_gap(lines: &[Item]) -> Option<f64> {
 /// 一块正文：从上到下分行（框的高度重叠一半以上算同一行，表格的一行格子会接在一起），行内从左到右；
 /// 行距明显变大（段落、表格和正文之间）时空一行。
 fn write_block(block: &mut [Item], text: &mut String) {
-    block.sort_by(|(_, a), (_, b)| mid_y(*b).total_cmp(&mid_y(*a)));
+    block.sort_by(|(_, a, _), (_, b, _)| mid_y(*b).total_cmp(&mid_y(*a)));
     let mut previous: Option<(f64, f64)> = None;
     let start = text.len();
-    for row in block.chunk_by_mut(|(_, a), (_, b)| {
+    for row in block.chunk_by_mut(|(_, a, _), (_, b, _)| {
         (mid_y(*a) - mid_y(*b)).abs() <= a.height.min(b.height) * 0.5
     }) {
-        row.sort_by(|(_, a), (_, b)| a.x.total_cmp(&b.x));
+        row.sort_by(|(_, a, _), (_, b, _)| a.x.total_cmp(&b.x));
         let top = row
             .iter()
-            .map(|(_, b)| b.y + b.height)
+            .map(|(_, b, _)| b.y + b.height)
             .fold(f64::NEG_INFINITY, f64::max);
-        let bottom = row.iter().map(|(_, b)| b.y).fold(f64::INFINITY, f64::min);
+        let bottom = row
+            .iter()
+            .map(|(_, b, _)| b.y)
+            .fold(f64::INFINITY, f64::min);
         let height = top - bottom;
         if text.len() > start {
             if previous.is_some_and(|(y, h)| y - top <= height.max(h)) {
@@ -173,7 +190,7 @@ fn write_block(block: &mut [Item], text: &mut String) {
                 text.push_str("\n\n");
             }
         }
-        for (index, (line, _)) in row.iter().enumerate() {
+        for (index, (line, _, _)) in row.iter().enumerate() {
             if index > 0 {
                 text.push(' ');
             }
@@ -190,6 +207,7 @@ fn mid_y(bounds: OcrBounds) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::OcrLine;
 
     #[test]
     fn orders_columns_between_spanning_blocks() {
@@ -203,7 +221,7 @@ mod tests {
             line("左二", 0.09, 0.79, 0.27),
             line("标题", 0.09, 0.93, 0.75),
         ];
-        let OcrText { text, lines, .. } = assemble(input);
+        let (OcrText { text, lines, .. }, _) = assemble(input);
         assert_eq!(
             text,
             "标题\n\n左一\n左二\n\n左三\n\n右一\n右二\n\n右三\n\n页脚"
@@ -231,7 +249,7 @@ mod tests {
         }
         input.push(line("通栏标题", 0.04, 0.92, 0.70));
         input.reverse();
-        let text = assemble(input).text;
+        let text = assemble(input).0.text;
         assert_eq!(
             text,
             "通栏标题\n\n11\n12\n13\n14\n\n21\n22\n23\n24\n\n31\n32\n33\n34\n\n41\n42\n43\n44"
@@ -240,7 +258,7 @@ mod tests {
 
     #[test]
     fn keeps_short_table_entries_in_rows() {
-        let result = assemble(vec![
+        let (result, _) = assemble(vec![
             line("30", 0.65, 0.72, 0.03),
             line("C", 0.20, 0.72, 0.03),
             line("10", 0.65, 0.799, 0.03),
@@ -271,6 +289,7 @@ mod tests {
                 bounds: pdf,
             },
             visual,
+            Vec::new(),
         )
     }
 }

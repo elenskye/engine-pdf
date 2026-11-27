@@ -1,6 +1,6 @@
 # engine-pdf 设计稿
 
-> 依据 `docs/brief.md`、`docs/brief-2.md`、`docs/brief-pomelo.md`，选型见 `docs/decisions/`。§1–3 已实现（v0.2.0 本机读取，v0.3.0 本机 OCR 和 Mathpix）；§4 是各 App 的接入计划；§6 是实测结论；§7 是 v0.5.0 页面与结构、预览级编辑（已实现），§8（v0.6.0 PDFium 级）是计划。
+> 依据 `docs/brief.md`、`docs/brief-2.md`、`docs/brief-pomelo.md`，选型见 `docs/decisions/`。§1–3 是本机读取、OCR 和 Mathpix，§4 是 App 接入计划，§6 是实测结论，§7 是页面与结构、预览级编辑。§8 是 PDFium 接入、可搜索扫描件、对象编辑和涂黑。
 
 ## 0. 现状
 
@@ -33,6 +33,7 @@ engine_pdf
 ├── mathpix           （v0.3.0）Quote（本地报价）→ run（上传识别）；分步 submit / wait / fetch / delete
 ├── edit              （v0.5.0）改动单 Plan → apply：页面管理、标注、填表、目录、文件信息、密码（§7）
 ├── compose           （v0.5.0）照片打包成 PDF、把几份 PDF 拼成带链接和目录的一份（§7.4）
+├── searchable        （v0.6.0）在选中的扫描页写入可搜索文字层（§8.3）
 ├── objects / redact  （v0.6.0，feature "pdfium"）移动、删除页上的文字和图片，涂黑（§8）
 └── samples           （feature "samples"）测试样本生成器和手写最小 PDF 的 raw_pdf，App 的测试也能用
 
@@ -97,6 +98,7 @@ pub struct Page {
 
 pub enum Content {
     Text(String),                 // 文字层能代表这一页（PDFKit 原样，不整理）；也包括除了几个字别无他物的页（只有页码、一句话）
+    SearchableText(String),       // 引擎先前写入的本机 OCR，使用识别时的阅读顺序
     Ocr(OcrText),                 // 本机 Vision 识别的字 + why（NoTextLayer / Garbled）+ 平均置信度 + 每行文字和框
     Blank,                        // 空白页：没有文字层，页面几乎全白（不跑 OCR）
     NoText { reason, partial },   // 有画面但没取到能代表它的字：OcrOff / Garbled / NothingRecognized；
@@ -138,6 +140,7 @@ let opts = ReadOptions {
 for p in read(&doc, &wanted, &opts, &cancel)? {
     let body = match &p.content {
         Content::Text(t) => t.trim().to_string(),
+        Content::SearchableText(t) => format!("（这一页是先前保存的 OCR 文字，可能有错字）\n{t}"),
         Content::Ocr(o) => format!("（这一页没有文字层，下面是本机 OCR 识别的，可能有错字）\n{}", o.text),
         Content::Blank => "（空白页）".into(),
         Content::NoText { partial, .. } => no_text_hint(partial),     // 提示可用 ocr_pdf；页图照常附在后面
@@ -444,6 +447,19 @@ Pomelo 上传 Word 用 `mathpix::submit_file(bytes, mime, estimated_pages, &keys
 
 真实 App 的确认框、断网和安装包在各 App 接入时验收。
 
+**可搜索扫描件与 PDFium（v0.6.0 Phase 1–2，M3 Pro、macOS 27.2.1）**
+
+- 静态库验证用同一 Release 程序对照。去符号后从 399,904 B 增至 8,069,416 B（约 +7.3 MiB）。各重链三次，中值从 0.27 s 增至 1.37 s。链接产物无需带 `libpdfium.dylib`。
+- `mixed` 的两个扫描页、`scanned_two_column` 及站主提供的 5 张扫描图均做了对照。PDFKit 的 OCR 存盘输出在 PDFKit 和 PDF.js 6.5.438 中都取不到扫描文字。Vision + PDFium 原型两边能读到中英文，复杂英文多栏页在 PDFKit 取字时按版面重排。
+- 5 页站主扫描图合成的 PDF 从 4,274,310 B 增至 4,336,581 B（+1.46%），PDFium 原型 4,307,217 B（+0.77%）。正式实现禁网运行，全部页面有文字层，5 页渲染逐像素一致。含非零 CropBox、旋转 90° 的样本保留目录和链接，PDFKit 与 PDF.js 可读取目标字串。PDF.js 实际搜索高亮对齐文字。
+- 涂黑边界试验与后续限制见 `decisions/0010`。
+
+**对象编辑和涂黑（v0.6.0 审核，`decisions/0019`）**
+
+- 38 份真实论文（28 份 Zotero 副本 + 10 份 `local/pdf` 和验收样本）各取第 2 页：移动一行字、删一张图、涂黑同一行。PDFium 整页重写时，移动后编辑区外画面明显变了的 26 份（XGBoost 右栏下半截消失、Shore 整页字距变了），涂黑被拒 11 份（9 份因结构树或知网的 `/StructParents`，2 份因重写挪动了框边的字）。
+- 改成只改原指令后：移动 38/38、删图 4/4、涂黑 38/38 成功，编辑区外像素和取字不变（容许万分之一的亚像素差），框里零漏字（引擎验证 + 独立的 pypdfium2 再取字）。PDFium 的对象清单和引擎数出的指令在全部页上对得上。整页位图后备 13 份，原因是框压到相邻行的字形或框碰到 Form；位图的黑白页存灰度，一页约 +0.5 MB。
+- 可搜索副本在 8 份真实扫描件上：渲染逐像素不变，文件 +1.5–4.5%，一页 0.5–1 s；pypdfium2 取出的字框落在扫描图的原字上（中英文）；「预览」和 PDF.js 搜得到、高亮对位。
+
 ---
 
 ## 7. 页面与结构、预览级编辑（v0.5.0）
@@ -513,7 +529,7 @@ pub fn apply(doc: &Document, others: &[&Document], plan: &Plan, save: &Save, can
 5. 新标注由 PDFKit 在同样几何的空白页上画好后搬到输出页。链接直接写字典，内部目标用输出物理页码。
 6. 写目录和文件信息，存盘。按 `Save` 烧平，最后加密。
 
-处理在内存进行，每页检查 `Cancel`。v0.6.0 的对象编辑和涂黑由 PDFium 先改好对应页面（§8）。
+处理在内存进行，每页检查 `Cancel`。v0.6.0 的对象编辑在第 2 步之后改主文档的原内容流，涂黑在烧平之后、加密之前按最终页面执行（§8）。
 
 ### 7.4 新建：照片打包、拼 PDF
 
@@ -553,23 +569,27 @@ compose::assemble(parts: &[&[u8]], how: &Assembly, &Cancel) -> Result<Vec<u8>, E
 
 试用页在编辑区显示主文件原始页码，在缩略图栏整理输出页序。插入页和旋转用于输出预览，保存重开后可直接编辑这些页面。
 
+- 可搜索副本单独选原始物理页，用本机 Vision 处理。已有编辑时先保存，再在重开的文件上运行 OCR。
+- 启用 `pdfium` 时显示「选对象」和「涂黑」。对象清单按页向服务要；编号只由文件内容决定，保存时服务重新打开同一份字节，编号照样对得上。
+- 保存时确认涂黑草稿。取消保留草稿，确认后将框连同普通编辑交给引擎。确认窗口说明文件信息、书签和附件仍可能含同一内容。
+
 ---
 
-## 8. PDFium 级（v0.6.0，计划）
+## 8. PDFium 级（v0.6.0）
 
-### 8.1 分工（`decisions/0010`）
+### 8.1 分工（`decisions/0010`、`0019`）
 
-| 能力 | PDFKit | PDFium | 定 |
-| --- | --- | --- | --- |
-| 可搜索扫描件 | 存盘时 `PDFDocumentSaveTextFromOCROption`（macOS 13 起，系统自己识别、写进文字层） | 写不可见文字（render mode invisible），用引擎 OCR 的行、框和阅读顺序 | Phase 1 比 |
-| 移动、删除文字和图片 | 做不到 | 页面对象：列出、变换、删除、重新生成内容流 | PDFium |
-| 涂黑 | 没有真正的涂黑（redact 只是标注） | 删对象、改图片像素、盖黑块 | PDFium |
+| 能力 | 谁读 | 谁写 |
+| --- | --- | --- |
+| 可搜索扫描件 | Vision 识别、定位到字 | lopdf 在原页上叠不可见文字（PDFKit 的 `SaveTextFromOCR` 实测不留文字层） |
+| 移动、删除文字和图片 | PDFium 列对象 | lopdf 只改那几条指令（`sys/content.rs`） |
+| 涂黑 | PDFium 列对象、取字形框、解图 | lopdf 删指令、换图、盖黑框；做不到就整页位图 |
 
 ### 8.2 接入
 
-- Rust 绑定用 `pdfium-render`；feature `pdfium` 默认关，只有要的 App 打开。`check.sh` 加一种开 `pdfium` 的配置。
-- 只用现成的预编译库，不从源码编（站主定，`decisions/0010`）。优先 macOS arm64 静态库链进 App，没有就随 App 带 `libpdfium.dylib`。Phase 1 量 App 二进制多大、链接多久、许可证（PDFium 和它带的 FreeType 等）再定。
-- PDFium 的 `unsafe` 在绑定里；引擎对外只露安全类型，和 PDFKit 一样不跨线程、每页查 `Cancel`。PDFium 文档对象只在 `edit::apply` 里短暂存在，改完交回字节再给 PDFKit。
+- Rust 绑定用 `pdfium-render`；feature `pdfium` 默认关，只有要的 App 打开。`check.sh` 多跑一种开 `pdfium` 的配置。
+- 采用 libviprs 的 PDFium chromium/8085 预编译静态库，macOS arm64 已验证。构建参数和分发所需的上游通知见 `decisions/0010` 与 `THIRD_PARTY.md`。
+- PDFium 文档只在 `Document::objects`、`edit::apply` 里短暂打开，只读。改动写在原内容流上：按 PDFium 的规则数出每个对象的指令，和 PDFium 清单对上才改（`decisions/0019`）。改完核对改动区外的像素和字不变（`sys/check.rs`）。
 
 ### 8.3 可搜索扫描件
 
@@ -577,24 +597,25 @@ compose::assemble(parts: &[&[u8]], how: &Assembly, &Cancel) -> Result<Vec<u8>, E
 pub fn searchable(doc: &Document, pages: &[u32], opts: &OcrOptions, cancel: &Cancel, progress: &dyn Fn(u32)) -> Result<Vec<u8>, Error>;
 ```
 
-- 只给没有文字层（或乱码）的页加字，别的页、标注、链接、目录不动；断网可做。
-- 加的字和页上的字对齐：预览、PDF.js 里选中、搜索高亮落在对的位置。
-- 标记哪些页的文字是识别加上的；引擎再读时能分出这些页（`Content` 怎么交 Phase 2 定），App 照样能告诉模型「这是识别的字，可能有错字」。
-- 生成的文件比原件大多少、Phase 1 的结论写进 §6。
+- 选页用原始物理页码。按传入顺序处理唯一页码，回调报告已处理的页（含跳过的页）。越界在识别前报错，取消时不给输出。空选择或没有新增文字层时返回原字节。
+- 选定的无文字层或乱码页用 Vision 本机识别，lopdf 向当前页追加字体资源和不可见层，保留原内容、标注、链接和目录。乱码页外部阅读器可能一并复制原乱码。加密输入先由调用方用权限密码打开，经 `edit::apply` 明确去密码。
+- Unicode 由 `ToUnicode` CMap 提供，使用引擎自制的占位字体。字符位置来自 Vision，缺失的边界在相邻字符间补齐。整行无法定位字符时按行宽放置。文字矩阵使用与 OCR 一致的 CropBox 和旋转。
+- 页上的 `/EnginePDFOCRText` 流存放 Vision 排好顺序的 UTF-8 文本。`read` 和 `read_each` 返回 `Content::SearchableText`，`Summary::ocr` 计入此类页。`Document::text` 交 PDFKit 的原始提取结果。涂黑时移除原 OCR 文本流，整页后备的 OCR 可以写入新流。
+- 实测文件大小、取字和搜索结果见 §6。
 
 ### 8.4 移动与删除文字、图片
 
 ```rust
-doc.objects(8)?;   // Vec<Object { id, kind: Text | Image | Path | Other, bounds, text }>（feature "pdfium"）
+doc.objects(8)?;   // Vec<PageObject>，需启用 "pdfium"
 ```
 
-- 改动单加 `objects: Vec<ObjectOp>`：`Move { page, id, dx, dy }`、`Delete { page, id }`；`id` 只在同一次打开里有效。
-- 套件加「选对象」工具：点选、框选、拖动预览、删除；结果进改动单。
-- 改完再取字、画页图：移动的字在新位置能取到，删掉的取不到，别的页逐字不变。
+- `PageObject` 带 `id`（页内序号，从 1 起，只由文件内容决定）、`kind`、`bounds` 和文字。可见的文字和图片能编辑；路径、Form 和不可见的 OCR 字是只读的。
+- `Plan.objects` 支持 `Move { page, id, dx, dy }`（页面坐标）和 `Delete { page, id }`，改的是主文档的原始页，随页输出到每份副本。
+- 移动图片包一层 `q cm … Q`；移动文字用只挪位置的 `TJ` 和字高 `Ts`，同一行后面的字不受影响。删除去掉那条指令；同一行后面还接着画字时按字宽表补回前进量，字宽拿不准就报 `ObjectNotEditable`。对不上清单、页上有内联图片、或改完页面别处会变时报 `ObjectEditFailed`。
+- Web 调 `EditorTools.setPageObjects(page, objects)` 交对象清单，`select("object")` 后支持点选、框选、拖动预览、`deleteObjects()` 和撤销。保存时合并 `EditorTools.objects`。
 
 ### 8.5 涂黑
 
-- 改动单加 `redact: Vec<Redaction { page, rects }>`。框里的字、图片像素、标注都去掉，再盖黑块。
-- 字对象只有一部分在框里时，这一页退回「整页画成图 → 涂黑 → 本机 OCR 把框外的字加回成不可见文字」，那一页仍能搜框外的字。
-- **硬条件**（`decisions/0010`）：涂完用引擎再取字，框里一个字都取不到；页图里框内全黑；图片资源里也没有原像素。达不到就报错、不交文件。
-- 基础涂黑不管文件信息、书签、附件里的同一段字；App 的确认框要说清楚。套件的涂黑工具是先标、再确认执行。
+- `Plan.redact` 收 `{ page, rects }`，框在原物理页的 CropBox 里。执行顺序、整页后备、共享图像和验证条件见 `decisions/0018`。
+- Web 用 `select("redact")` 画草稿框（`pendingRedactions`），App 用 `confirmRedactions(approve)` 说明范围、取得确认，保存时合并 `EditorTools.redact`。撤销确认时框回到草稿。
+- 关掉 `pdfium` 时，带对象编辑或涂黑的改动单返回 `Error::PdfiumUnavailable`。

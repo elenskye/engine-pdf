@@ -25,6 +25,7 @@ input[type="range"] { width: 70px; padding: 0; }
 label { display: inline-flex; gap: .35rem; align-items: center; }
 .header, .toolbar, .navigation { background: #fff; border-bottom: 1px solid #d9dde4; }
 .header { display: flex; align-items: center; gap: 1rem; padding: .65rem 1rem; }
+.header button { flex-shrink: 0; }
 .header h1 { margin: 0; font-size: 1.14rem; white-space: nowrap; }
 .document-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #505967; }
 .toolbar { display: grid; gap: .38rem; padding: .45rem 1rem; }
@@ -59,12 +60,14 @@ dialog { color: inherit; border: 1px solid #c8cdd5; border-radius: 10px; padding
 dialog::backdrop { background: #282e3a66; }
 dialog form { display: grid; gap: .8rem; }
 dialog h2 { margin: 0; font-size: 1.05rem; }
+dialog p { margin: 0; max-width: 29rem; }
 dialog .buttons { justify-content: flex-end; }
 #signature-pad { display: block; max-width: 100%; border: 1px solid #b8c1cd; touch-action: none; }
 @media (max-width: 720px) {
   .workspace { grid-template-columns: clamp(138px, 31vw, 210px) minmax(0, 1fr); }
   .toolbar { padding-inline: .5rem; }
   .header h1 { font-size: 1rem; }
-  .header { gap: .45rem; padding-inline: .5rem; }
+  .header { gap: .45rem; padding-inline: .5rem; flex-wrap: wrap; }
+  .header .document-name { min-width: 8rem; }
   .pages { grid-template-columns: minmax(0, 1fr); }
 }

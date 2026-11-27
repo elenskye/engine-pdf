@@ -1,6 +1,15 @@
 # CHANGELOG
 
-每个发出去的版本（tag `v<版本>`）：公共接口变化、App 升级要改什么。
+记录各版本的公共接口变化和 App 升级事项。
+
+## v0.6.0
+
+- **可搜索扫描件**：`searchable(doc, pages, opts, cancel, progress)` 用 Vision 本机识别选中的扫描页，lopdf 写入不可见文字层（字和扫描图上的字对齐）。选页用原始物理页码；已有文字层的页跳过。加密文件先用权限密码打开，经 `edit::apply` 去密码。不需要 `pdfium`。
+- **读回 OCR**：`read`、`read_each` 新增 `Content::SearchableText(String)`，按识别时的阅读顺序交回，换页序、合并后照样认得；`Summary::ocr` 计入这些页。穷尽匹配 `Content` 的要补分支。
+- **对象编辑和涂黑**（feature `pdfium`，默认关）：`Document::objects(page)` 列出页面对象；`Plan.objects` 移动、删除可见的文字和图片，`Plan.redact` 在普通编辑之后涂黑。对象编号只由文件内容决定，同一份文件每次列出都一样。改动只写在那几条指令上，别处原样保留（`decisions/0019`）。Rust 直接初始化完整 `Plan` 的要补这两个字段，原来的 Plan JSON 照用。关掉 `pdfium` 时返回 `Error::PdfiumUnavailable`。
+- **新错误**：`PdfiumUnavailable`、`ObjectNotFound`、`ObjectNotEditable`（字宽拿不准、删掉后会挪动同一行后面的字等）、`ObjectEditFailed`（对不上对象清单，或改完页面别处会变）、`RedactionFailed`、`RedactionSharedImage`。穷尽匹配 `Error` 的要补分支。
+- **Web 套件和试用页**：`EditorTools` 支持对象点选、框选、拖动、删除，涂黑先画草稿、经 `confirmRedactions` 确认。App 用 `setPageObjects` 交对象清单。试用页加「生成可搜索副本」，开 `pdfium` 后加「选对象」「涂黑」。
+- **分发**：开 `pdfium` 时静态链接预编译 PDFium（macOS arm64，二进制约 +7.3 MiB），随 App 附上 `THIRD_PARTY.md` 所列通知。
 
 ## v0.5.2
 

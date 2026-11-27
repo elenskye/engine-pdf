@@ -18,6 +18,12 @@ pub struct Plan {
     pub remove: Vec<MarkId>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fill: Vec<Fill>,
+    /// 主文档的页面对象改动，标识来自 `Document::objects`（需要 `pdfium`）。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub objects: Vec<ObjectOp>,
+    /// 主文档上要永久涂黑的区域，所选原始页的每个输出副本都会应用。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub redact: Vec<Redaction>,
     /// 替换整棵目录。目标页码引用输出；空数组删除目录。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outline: Option<Vec<OutlineItem>>,
@@ -49,6 +55,47 @@ pub struct Rect {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ObjectKind {
+    Text,
+    Image,
+    Path,
+    Other,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PageObject {
+    /// 页内对象的序号，从 1 起。只由文件内容决定：同一份文件每次列出都一样，改过的文件要重新列。
+    pub id: u32,
+    pub kind: ObjectKind,
+    pub bounds: Rect,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum ObjectOp {
+    Move {
+        page: u32,
+        id: u32,
+        dx: f64,
+        dy: f64,
+    },
+    Delete {
+        page: u32,
+        id: u32,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Redaction {
+    pub page: u32,
+    pub rects: Vec<Rect>,
 }
 
 impl Rect {

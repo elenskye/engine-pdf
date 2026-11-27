@@ -1,7 +1,7 @@
-import { bounds, type Color, type Mark, type MarkId, type Point, type Quad, type Shape, type Stroke, type Target, type TextMarkup } from "./plan.js";
+import { bounds, type Color, type Mark, type MarkId, type ObjectOp, type PageObject, type Point, type Quad, type Rect, type Redaction, type Shape, type Stroke, type Target, type TextMarkup } from "./plan.js";
 import { EditorViewer, type NativeTool, type PageView } from "./viewer.js";
 
-export type CustomTool = "underline" | "strikeout" | "note" | Shape["kind"] | "link";
+export type CustomTool = "underline" | "strikeout" | "note" | Shape["kind"] | "link" | "object" | "redact";
 export type Tool = NativeTool | CustomTool;
 export interface ToolStyle {
   color: Color;
@@ -21,9 +21,13 @@ export class EditorTools {
   readonly #events = new AbortController();
   readonly #adds: Mark[] = [];
   readonly #removals: MarkId[] = [];
+  readonly #inventory = new Map<number, readonly PageObject[]>();
+  readonly #objectOps: ObjectOp[] = [];
+  readonly #regions: { page: number; rect: Rect; confirmed: boolean }[] = [];
+  #selection: { page: number; ids: number[] } | null = null;
   #tool: Tool = "select";
   #style: ToolStyle = { width: 2, color: { red: 0.86, green: 0.22, blue: 0.17, alpha: 1 } };
-  #draft: { page: number; view: PageView; start: Point; pointer: number } | null = null;
+  #draft: { page: number; view: PageView; start: Point; pointer: number; moving?: boolean; end?: Point } | null = null;
 
   constructor(viewer: EditorViewer, onChange?: () => void) {
     this.#viewer = viewer;
@@ -42,12 +46,74 @@ export class EditorTools {
   get tool(): Tool { return this.#tool; }
   get add(): readonly Mark[] { return this.#adds; }
   get remove(): readonly MarkId[] { return this.#removals; }
+  get objects(): readonly ObjectOp[] { return this.#objectOps; }
+  get redact(): Redaction[] { return this.#redactions(true); }
+  get pendingRedactions(): Redaction[] { return this.#redactions(false); }
+  get selectedObjects(): readonly number[] { return this.#selection?.ids ?? []; }
+
+  setPageObjects(page: number, objects: readonly PageObject[]): void {
+    const editable = objects.filter(object => object.kind === "text" || object.kind === "image");
+    this.#inventory.set(page, editable);
+    if (this.#selection?.page === page) {
+      const ids = this.#selection.ids.filter(id => editable.some(object => object.id === id));
+      if (ids.length !== this.#selection.ids.length) {
+        this.#selection = ids.length ? { page, ids } : null;
+        this.#changed();
+        return;
+      }
+    }
+    this.#draw();
+  }
+
+  deleteObjects(): boolean {
+    const selection = this.#selection;
+    if (!selection?.ids.length) return false;
+    const ops: ObjectOp[] = selection.ids.map(id => ({ kind: "delete", page: selection.page, id }));
+    this.#viewer.command(() => {
+      this.#objectOps.push(...ops);
+      this.#selection = null;
+      this.#changed();
+    }, () => {
+      this.#objectOps.splice(-ops.length);
+      this.#selection = selection;
+      this.#changed();
+    });
+    return true;
+  }
+
+  // 调用方展示确认 UI，明确同一段内容仍可出现在文件信息、书签或附件中。
+  async confirmRedactions(approve: (drafts: readonly Redaction[]) => boolean | Promise<boolean>): Promise<boolean> {
+    const pending = this.#regions.filter(region => !region.confirmed);
+    if (!pending.length || !await approve(this.pendingRedactions)) return false;
+    if (pending.some(region => region.confirmed || !this.#regions.includes(region))) return false;
+    this.#viewer.command(() => {
+      for (const region of pending) region.confirmed = true;
+      this.#changed();
+    }, () => {
+      for (const region of pending) region.confirmed = false;
+      this.#changed();
+    });
+    return true;
+  }
+
+  #redactions(confirmed: boolean): Redaction[] {
+    const pages = new Map<number, Rect[]>();
+    for (const region of this.#regions) {
+      if (region.confirmed !== confirmed) continue;
+      const rect = { ...region.rect };
+      const rects = pages.get(region.page);
+      if (rects) rects.push(rect);
+      else pages.set(region.page, [rect]);
+    }
+    return Array.from(pages, ([page, rects]) => ({ page, rects }));
+  }
 
   async select(tool: Tool): Promise<void> {
     this.#draft = null;
     await this.#viewer.select(NATIVE.has(tool) ? tool as NativeTool : "select");
     this.#tool = tool;
     this.setStyle(this.#style);
+    this.#draw();
   }
 
   setStyle(style: ToolStyle): void {
@@ -112,6 +178,9 @@ export class EditorTools {
 
   reset(): void {
     this.#adds.length = this.#removals.length = 0;
+    this.#objectOps.length = this.#regions.length = 0;
+    this.#inventory.clear();
+    this.#selection = null;
     this.#draft = null;
     this.#tool = "select";
     this.#changed();
@@ -138,7 +207,7 @@ export class EditorTools {
     const page = this.#page(event.target as Node);
     if (!page) return;
     event.preventDefault();
-    const start = toPdf(page.view, event.clientX, event.clientY);
+    const start = toPdf(page.view, event.clientX, event.clientY, this.#tool === "redact");
     if (this.#tool === "note") {
       const { color, contents } = this.#style;
       if (!contents?.trim()) return;
@@ -146,21 +215,89 @@ export class EditorTools {
         rect: { x: start.x, y: start.y - 24, width: 24, height: 24 } });
       return;
     }
-    this.#draft = { page: page.number, view: page.view, start, pointer: event.pointerId };
+    let moving = false;
+    if (this.#tool === "object") {
+      const candidate = this.#pageObjects(page.number).findLast(({ bounds: b }) =>
+        start.x >= b.x && start.x <= b.x + b.width && start.y >= b.y && start.y <= b.y + b.height);
+      if (candidate) {
+        if (this.#selection?.page !== page.number || !this.#selection.ids.includes(candidate.id)) {
+          this.#selection = { page: page.number, ids: [candidate.id] };
+        }
+        moving = true;
+      } else {
+        this.#selection = null;
+      }
+    }
+    this.#draft = { page: page.number, view: page.view, start, pointer: event.pointerId, moving };
     this.#viewer.container.setPointerCapture(event.pointerId);
+    this.#changed();
   }
 
   #drawDrag(event: PointerEvent): void {
     if (this.#draft?.pointer !== event.pointerId) return;
+    if (this.#tool === "object" || this.#tool === "redact") {
+      this.#draft.end = toPdf(this.#draft.view, event.clientX, event.clientY, this.#tool === "redact");
+      this.#draw();
+      return;
+    }
     this.#draw(this.#dragMark(event));
   }
 
   #end(event: PointerEvent): void {
-    if (this.#draft?.pointer !== event.pointerId) return;
+    const draft = this.#draft;
+    if (draft?.pointer !== event.pointerId) return;
+    if (this.#tool === "object" || this.#tool === "redact") {
+      this.#draft = null;
+      const end = toPdf(draft.view, event.clientX, event.clientY, this.#tool === "redact");
+      const dx = end.x - draft.start.x, dy = end.y - draft.start.y;
+      const area = bounds([draft.start, end]);
+      if (this.#tool === "object" && draft.moving && this.#selection && Math.hypot(dx, dy) >= 1) {
+        const ops: ObjectOp[] = this.#selection.ids.map(id => ({ kind: "move", page: draft.page, id, dx, dy }));
+        this.#viewer.command(() => {
+          this.#objectOps.push(...ops);
+          this.#changed();
+        }, () => {
+          this.#objectOps.splice(-ops.length);
+          this.#changed();
+        });
+      } else if (!draft.moving && area.width >= 1 && area.height >= 1) {
+        if (this.#tool === "object") {
+          const ids = this.#pageObjects(draft.page).filter(({ bounds: b }) =>
+            b.x < area.x + area.width && b.x + b.width > area.x &&
+            b.y < area.y + area.height && b.y + b.height > area.y).map(object => object.id);
+          this.#selection = { page: draft.page, ids };
+          this.#changed();
+        } else {
+          const region = { page: draft.page, rect: area, confirmed: false };
+          this.#viewer.command(() => {
+            this.#regions.push(region);
+            this.#changed();
+          }, () => {
+            this.#regions.splice(this.#regions.indexOf(region), 1);
+            this.#changed();
+          });
+        }
+      } else this.#changed();
+      return;
+    }
     const mark = this.#dragMark(event);
     this.#draft = null;
     if (mark) this.addMark(mark);
     else this.#draw();
+  }
+
+  #pageObjects(page: number): PageObject[] {
+    const inventory = this.#inventory.get(page);
+    if (!inventory) return [];
+    const objects = new Map(inventory.map(item => [item.id, { ...item, bounds: { ...item.bounds } }]));
+    for (const op of this.#objectOps) {
+      if (op.page !== page) continue;
+      const item = objects.get(op.id);
+      if (!item) continue;
+      if (op.kind === "delete") objects.delete(op.id);
+      else { item.bounds.x += op.dx; item.bounds.y += op.dy; }
+    }
+    return Array.from(objects.values());
   }
 
   #dragMark(event: PointerEvent): Mark | undefined {
@@ -200,11 +337,10 @@ export class EditorTools {
     container.querySelectorAll("[data-engine-pdf-overlay]").forEach(layer => layer.remove());
     const marks = draft ? [...this.#adds, draft] : this.#adds;
     const layers = new Map<number, SVGSVGElement>();
-    for (const mark of marks) {
-      if (mark.source !== 0) continue;
-      const view = this.#viewer.pageView(mark.page);
-      if (!view?.div.querySelector(".canvasWrapper")) continue;
-      let layer = layers.get(mark.page);
+    const useLayer = (page: number) => {
+      const view = this.#viewer.pageView(page);
+      if (!view?.div.querySelector(".canvasWrapper")) return;
+      let layer = layers.get(page);
       if (!layer) {
         layer = container.ownerDocument.createElementNS(SVG, "svg");
         layer.dataset.enginePdfOverlay = "";
@@ -212,20 +348,58 @@ export class EditorTools {
         layer.setAttribute("aria-hidden", "true");
         Object.assign(layer.style, { position: "absolute", inset: "0", width: "100%", height: "100%", pointerEvents: "none", zIndex: "5" });
         view.div.append(layer);
-        layers.set(mark.page, layer);
+        layers.set(page, layer);
       }
-      drawMark(layer, view, mark);
+      return { layer, view };
+    };
+    for (const mark of marks) {
+      if (mark.source !== 0) continue;
+      const surface = useLayer(mark.page);
+      if (surface) drawMark(surface.layer, surface.view, mark);
+    }
+    const drawBox = (page: number, b: Rect, fill: string) => {
+      const surface = useLayer(page);
+      if (!surface) return;
+      const { layer, view } = surface;
+      const [x1, y1] = view.viewport.convertToViewportPoint(b.x, b.y);
+      const [x2, y2] = view.viewport.convertToViewportPoint(b.x + b.width, b.y + b.height);
+      const rect = container.ownerDocument.createElementNS(SVG, "rect");
+      for (const [key, value] of Object.entries({
+        x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x1 - x2), height: Math.abs(y1 - y2),
+        fill, stroke: "currentColor", "stroke-dasharray": "4 3",
+      })) rect.setAttribute(key, String(value));
+      layer.append(rect);
+    };
+    for (const region of this.#regions) {
+      drawBox(region.page, region.rect, region.confirmed ? "rgba(0,0,0,0.58)" : "rgba(0,0,0,0.2)");
+    }
+    const dragging = this.#draft;
+    if (this.#tool === "object" && this.#selection) {
+      const { page, ids } = this.#selection;
+      for (const { id, bounds: b } of this.#pageObjects(page)) {
+        if (!ids.includes(id)) continue;
+        const end = dragging?.moving ? dragging.end : undefined;
+        drawBox(page, end && dragging ? {
+          ...b, x: b.x + end.x - dragging.start.x, y: b.y + end.y - dragging.start.y,
+        } : b, "none");
+      }
+    }
+    if (dragging?.end && !dragging.moving && (this.#tool === "object" || this.#tool === "redact")) {
+      drawBox(dragging.page, bounds([dragging.start, dragging.end]), this.#tool === "redact" ? "rgba(0,0,0,0.2)" : "none");
     }
   }
 }
 
-function toPdf(view: PageView, clientX: number, clientY: number): Point {
+function toPdf(view: PageView, clientX: number, clientY: number, clamp = false): Point {
   const element = view.div.querySelector(".canvasWrapper") ?? view.div;
   const box = element.getBoundingClientRect();
-  const [x, y] = view.viewport.convertToPdfPoint(
-    (clientX - box.left) * view.viewport.width / box.width,
-    (clientY - box.top) * view.viewport.height / box.height,
-  );
+  let left = (clientX - box.left) * view.viewport.width / box.width;
+  let top = (clientY - box.top) * view.viewport.height / box.height;
+  if (clamp) {
+    left = Math.max(0, Math.min(view.viewport.width, left));
+    top = Math.max(0, Math.min(view.viewport.height, top));
+  }
+  const [x, y] = view.viewport.convertToPdfPoint(left, top);
   return { x, y };
 }
 
