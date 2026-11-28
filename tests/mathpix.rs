@@ -459,7 +459,7 @@ fn every_real_upload_goes_into_the_shared_ledger_and_simulated_ones_do_not() {
     use mathpix::spend::Ledger;
     let dir = std::env::temp_dir().join(format!("engine-pdf-ledger-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let ledger = Ledger::At(dir.join("ledger.jsonl"));
+    let ledger = Ledger::At(dir.clone());
     let doc = Document::from_bytes(&Sample::Mixed.generate().unwrap()).unwrap();
     let keys = Keys::new("fixture-app", "fixture-key");
     let scripted = Arc::new(FakeTransport::scripted([
@@ -478,16 +478,22 @@ fn every_real_upload_goes_into_the_shared_ledger_and_simulated_ones_do_not() {
     };
     let quote = mathpix::quote_with_options(&doc, &[2, 8], &options).unwrap();
     mathpix::run(&doc, &quote, &keys, &options, &Cancel::new(), &|_| {}).unwrap();
-    let entries = ledger.entries(std::time::UNIX_EPOCH);
+    let book = options.book();
+    assert_eq!(
+        book.path().unwrap(),
+        dir.join("engine-pdf/mathpix-ledger.jsonl")
+    );
+    let entries = book.entries(std::time::UNIX_EPOCH);
     assert_eq!(entries.len(), 1);
     assert_eq!(
         (
             entries[0].app.as_str(),
             entries[0].service.as_str(),
-            entries[0].pages,
+            entries[0].unit.as_str(),
+            entries[0].units,
             entries[0].usd
         ),
-        ("Pomelo", "Mathpix", 2, 0.025)
+        ("Pomelo", "Mathpix", "page", 2.0, 0.025)
     );
     // the echo (simulated) one: nothing recorded
     let echo = Options {
@@ -496,5 +502,5 @@ fn every_real_upload_goes_into_the_shared_ledger_and_simulated_ones_do_not() {
     };
     let quote = mathpix::quote_with_options(&doc, &[2], &echo).unwrap();
     mathpix::run(&doc, &quote, &keys, &echo, &Cancel::new(), &|_| {}).unwrap();
-    assert_eq!(ledger.entries(std::time::UNIX_EPOCH).len(), 1);
+    assert_eq!(book.entries(std::time::UNIX_EPOCH).len(), 1);
 }

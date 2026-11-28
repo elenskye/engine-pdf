@@ -571,7 +571,7 @@ compose::assemble(parts: &[&[u8]], how: &Assembly, &Cancel) -> Result<Vec<u8>, E
 
 ### 7.6 试用页
 
-先构建 `web/`，再运行 `cargo run --release --example studio -- [PDF]`。Rust 标准库服务绑定 `127.0.0.1` 的临时端口，接收同源的 PDF 字节、改动单和分开的密码选项。密码在浏览器中保留于当前会话，Rust 接收后用 `Zeroizing` 持有。保存结果写到 `local/studio/`，浏览器自动重开，也能下载副本。
+先构建 `web/`，再运行 `cargo run --release --example studio -- [PDF]`。Rust 标准库服务绑定 `127.0.0.1` 的临时端口，接收同源的 PDF 字节、改动单和分开的密码选项。密码在浏览器中保留于当前会话，Rust 接收后用 `Zeroizing` 持有。保存结果写到 `local/runs/v<版本>/studio/`，浏览器自动重开，也能下载副本。
 
 试用页在编辑区显示主文件原始页码，在缩略图栏整理输出页序。插入页和旋转用于输出预览，保存重开后可直接编辑这些页面。
 

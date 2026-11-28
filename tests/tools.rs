@@ -139,29 +139,73 @@ fn runs_every_manifest_example_with_generated_files_and_mock_mathpix() {
 fn mathpix_preparation_cannot_upload_and_zero_price_is_rejected() {
     let bytes = Sample::Mixed.generate().unwrap();
     let fake = Arc::new(FakeTransport::echo());
-    // the terminal: a paid tool only quotes without --yes
+    let mut pdf = NamedTempFile::new().unwrap();
+    pdf.write_all(&bytes).unwrap();
+    let args = json!({"file":pdf.path(),"pages":[4,1,4]});
+    let terminal = |kit: &tools::Toolkit<Options>| {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = cli::run_with(
+            kit,
+            ["call", "pdf_mathpix", &args.to_string()],
+            &mut stdout,
+            &mut stderr,
+        );
+        (code, serde_json::from_slice::<Value>(&stdout).unwrap())
+    };
+    // the terminal follows the spend rule: $0.01 runs without --yes (no keys here, so it stops at auth, nothing sent)
     let kit = tools::terminal_toolkit(Options {
         transport: fake.clone(),
         ..quiet()
     });
-    let mut pdf = NamedTempFile::new().unwrap();
-    pdf.write_all(&bytes).unwrap();
-    let args = json!({"file":pdf.path(),"pages":[4,1,4]});
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = cli::run_with(
-        &kit,
-        ["call", "pdf_mathpix", &args.to_string()],
-        &mut stdout,
-        &mut stderr,
-    );
-    let reply: Value = serde_json::from_slice(&stdout).unwrap();
+    let (code, reply) = terminal(&kit);
+    assert_eq!((code, &reply["error"]["kind"]), (1, &json!("auth")));
+    assert!(fake.requests().is_empty());
+    // the last day near $5 (every app): only the quote and why, exit 3
+    let dir = std::env::temp_dir().join(format!("engine-pdf-cli-spend-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let ledger = engine_pdf::mathpix::spend::Ledger::At(dir.clone());
+    let near = Options {
+        transport: fake.clone(),
+        ledger,
+        ..quiet()
+    };
+    near.book()
+        .record(&engine_pdf::mathpix::spend::Entry {
+            at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            app: "Peck".into(),
+            service: "Mathpix".into(),
+            unit: "page".into(),
+            units: 999.0,
+            usd: 4.995,
+            estimated: false,
+        })
+        .unwrap();
+    let (code, reply) = terminal(&tools::terminal_toolkit(near));
     assert_eq!(code, 3);
     assert_eq!(reply["tool"], "pdf_mathpix");
     assert_eq!(reply["quote"]["units"].as_f64(), Some(2.0));
     assert_eq!(reply["quote"]["usd"], 0.01);
+    assert!(
+        reply["why"].as_str().unwrap().contains("最近 24 小时已花"),
+        "{reply}"
+    );
     assert!(fake.requests().is_empty());
 
+    // an App that asks every time (overrides can only make it stricter): no means not a single request
+    let always = tools::Override {
+        confirm: Some(tools::Confirm::Always),
+        ..tools::Override::default()
+    };
+    let kit = tools::toolkit_with_mathpix(Options {
+        transport: fake.clone(),
+        ..quiet()
+    })
+    .with_overrides(&[("pdf_mathpix".to_string(), always)].into())
+    .unwrap();
     let mut host = Host {
         files: [(pdf.path().to_str().unwrap().to_owned(), bytes)].into(),
         secrets: [
@@ -325,7 +369,7 @@ fn the_spend_rule_asks_above_half_a_dollar_or_past_five_a_day() {
     use engine_pdf::mathpix::spend::{Entry, Ledger};
     let dir = std::env::temp_dir().join(format!("engine-pdf-tools-spend-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let ledger = Ledger::At(dir.join("ledger.jsonl"));
+    let ledger = Ledger::At(dir.clone());
     let bytes = Sample::Mixed.generate().unwrap();
     let fake = Arc::new(FakeTransport::echo());
     let kit = tools::toolkit_with_mathpix(Options {
@@ -363,7 +407,8 @@ fn the_spend_rule_asks_above_half_a_dollar_or_past_five_a_day() {
     kit.call("pdf_mathpix", &args, &host.ctx(&cancel, &prices))
         .unwrap();
     assert_eq!(posts(), 1);
-    assert!(ledger.entries(std::time::UNIX_EPOCH).is_empty());
+    let book = ledger.book("pdf", "Mathpix");
+    assert!(book.entries(std::time::UNIX_EPOCH).is_empty());
     // over $0.5 at once: asked; no means not a single request
     let mut dear = Prices::default();
     dear.set("Mathpix", "page", 0.3);
@@ -384,15 +429,16 @@ fn the_spend_rule_asks_above_half_a_dollar_or_past_five_a_day() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    ledger
-        .record(&Entry {
-            at: now - 60,
-            app: "Peck".into(),
-            service: "Mathpix".into(),
-            pages: 999,
-            usd: 4.998,
-        })
-        .unwrap();
+    book.record(&Entry {
+        at: now - 60,
+        app: "Peck".into(),
+        service: "Mathpix".into(),
+        unit: "page".into(),
+        units: 999.0,
+        usd: 4.998,
+        estimated: false,
+    })
+    .unwrap();
     let quote = kit
         .call("pdf_mathpix_quote", &args, &host.ctx(&cancel, &prices))
         .unwrap();

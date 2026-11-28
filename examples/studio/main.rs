@@ -16,7 +16,13 @@ use zeroize::Zeroizing;
 const LIMIT: usize = 256 * 1024 * 1024;
 const STUDIO: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/studio");
 const WEB: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/web");
-const OUTPUT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/local/studio");
+// 存的副本算这一版的中间产物（总仓库 GUIDE「五」「清理」）：发版后由 scripts/clean.sh 清进废纸篓
+const OUTPUT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/local/runs/v",
+    env!("CARGO_PKG_VERSION"),
+    "/studio"
+);
 
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]

@@ -25,7 +25,7 @@ Phase 5 用真实多栏旧 OCR 副本补验。整页读序对不上时，允许�
 ## 审核补记（2026-11-27，本机 Claude）
 
 - **扫描页上盖了几个字也要识别**：原来只要文字层有 1 个字就不做 OCR，扫描软件加的页码、水印让整页找不到。改成和 `read` 同一门槛（`design.md` §9.2），测试 `recognizes_scans_that_carry_only_a_short_text_stamp`。
-- **独立核对**：39 份真实 PDF（Schwab 账户文件不读）随机抽 110 个短语（三成跨行、含中文），PDFium 取框内文字比对，记录在本机 `local/v070-review/`。没过的都是抽样按 PDFium 的取字顺序拼了表格、参考文献，或下面两条局限。
+- **独立核对**：39 份真实 PDF（Schwab 账户文件不读）随机抽 110 个短语（三成跨行、含中文），PDFium 取框内文字比对，记录在本机 `local/checks/find-bounds/`（原 `local/v070-review/`）。没过的都是抽样按 PDFium 的取字顺序拼了表格、参考文献，或下面两条局限。
 - **局限一：PDFKit 丢 fi 连字**。Phoenix 2024 全文 PDFium 有 403 处 `fi`，PDFKit 只剩 3 处（`signi cant`）；Arpino 2022 134 → 5（`fve`）。PDFium 取得对。这是 v0.2 起取字就有的问题，`read`、`find` 都受影响；改不改取字的来源由站主定（`HANDOFF.md`）。
 - **局限二：个别中文字体的行框偏高**。李蓉蓉那篇的行框 24.8 pt，行距 15 pt，框会罩到下一行一半；「预览」里选中同一段也这样。逐字框（`characterBounds`）的下标和页面文字对不上，逐字选区框一样高，PDFKit 内收不紧；要收紧只能用 PDFium 的字形框。
 - **软连字符**：Duke 出版社的期刊在 `all\u{ad} observations` 这种词间空格前也放软连字符，engine-core v0.2.0 当断词把两个词拼在一起；engine-core v0.2.1 修了。

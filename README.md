@@ -67,7 +67,7 @@ cargo run --features samples --example make_samples
 cargo run --release --example studio -- samples/out/mixed.pdf
 ```
 
-用浏览器打开终端打印的 `127.0.0.1` 地址（要固定端口就设 `ENGINE_PDF_STUDIO_PORT`）。也可省略 PDF 路径，再在页面中选择文件。保存后自动打开 `local/studio/` 下的新副本。
+用浏览器打开终端打印的 `127.0.0.1` 地址（要固定端口就设 `ENGINE_PDF_STUDIO_PORT`）。也可省略 PDF 路径，再在页面中选择文件。保存后自动打开 `local/runs/v<版本>/studio/` 下的新副本（这一版的中间产物，发版后清进废纸篓，要留的另存）。
 
 - 输入关键词后按 Enter 或点「查找」，上一个和下一个在本次结果间跳转。用 `mixed.pdf` 查「記錄清晨」和 `quiet valley`，可分别看到中文原文和本机 OCR 高亮。
 - 「生成可搜索副本」用本机 Vision 识别指定物理页。用 `mixed.pdf` 试第 2 页，保存后可查找 `quiet valley`。有未保存编辑时，先保存并在重开的副本上选页。加密 PDF 需先用权限密码保存一份去密码的副本。

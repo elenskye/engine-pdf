@@ -170,10 +170,21 @@ pub struct Options {
     /// 生产为 Mathpix；测试可用 127.0.0.1。
     pub base: String,
     pub transport: Arc<dyn Transport>,
-    /// 花钱的账本：默认所有 App 共用的那份；开发版、测试用 `At` 或 `Off`。模拟的传输不记。
+    /// 花钱的账本放在哪：默认所有 App 共用的那份；开发版、测试用 `At(底)` 或 `Off`。模拟的传输不记。
+    /// 工具包（`tools::toolkit_with_mathpix`）照它定要不要问，`job` 照它记账。
     pub ledger: spend::Ledger,
     /// 记进账本的 App 名字（Peck、Pith、Pomelo）。
     pub app: String,
+}
+
+/// 账本里本引擎的短名（`<底>/engine-pdf/…`）。
+pub(crate) const ENGINE: &str = "pdf";
+
+impl Options {
+    /// Mathpix 这一份账：问不问（`approval`）、记一笔（`record`）、App 报告花了多少（`entries`）都用它。
+    pub fn book(&self) -> spend::Book {
+        self.ledger.book(ENGINE, SERVICE)
+    }
 }
 
 impl Default for Options {

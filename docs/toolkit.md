@@ -52,7 +52,7 @@ App 在自己的界面里把 `pdf_find` 的框画到页图上：`Document::page_
 
 - `pdf_objects`、`pdf_redact` 要 `pdfium` feature；没开时照样列出，调用报 `pdfium_unavailable`。
 - `pdf_mathpix` 只上传确认过的那几页（升序去重）、不上传加密 PDF；报价和执行之间 App 要保持同一份文件内容。
-- **花钱的规矩和账本**（`mathpix::spend`）：`pdf_mathpix` 上传前自己按规矩判断，要问时经 `Ctx.approve` 问（不同意就一个请求都不发）；`pdf_mathpix_quote` 的结果带 `ask`、`why`。每次真正上传记进所有 App 共用的账本 `~/Library/Application Support/engine-pdf/mathpix-ledger.jsonl`（`ENGINE_PDF_LEDGER` 可改，模拟的传输不记），App 用 `Options.app` 写上自己的名字、用 `Ledger::entries` 读。开发版和测试设 `Options.ledger` 为 `Ledger::At(自己的文件)` 或 `Ledger::Off`。先弹卡片再执行的 App 用 `Options.ledger.approval(Some(usd))` 拿同一个判断。
+- **花钱的规矩和账本**（engine-core `spend`，这里再导出成 `mathpix::spend`；总仓库 GUIDE「五」）：工具包照账本定要不要问——`toolkit.call` 要问时经 `Ctx.approve` 问（不同意就一个请求都不发）；先弹卡片再执行的 App 用 `prepare` 交回的 `needs_confirm()` 和原因 `why()`，用户同意后 `run(prepared.approve(), …)`（要确认却没 `approve` 的报 `denied`，一个请求都不发）。`pdf_mathpix_quote` 的结果带 `ask`、`why`。每次真正上传记一行进所有 App 共用的账本 `<底>/engine-pdf/mathpix-ledger.jsonl`（底默认 `~/Library/Application Support`，`ENGINE_LEDGER_DIR` 可改；模拟的传输不记），App 用 `Options.app` 写上自己的名字，用 `Options::book().entries(起点)` 读来报告。开发版和测试设 `Options.ledger` 为 `Ledger::At(底)`（下面是同样的 `engine-pdf/mathpix-ledger.jsonl`）或 `Ledger::Off`；`toolkit_with_mathpix` 把同一份交给工具包。
 
 ## 命令行
 
@@ -62,10 +62,10 @@ cargo run --bin engine-pdf -- tools
 cargo run --bin engine-pdf -- describe pdf_find
 cargo run --bin engine-pdf -- call pdf_read '{"file":"samples/out/mixed.pdf","pages":[1]}' --out output/read
 cargo run --bin engine-pdf -- call pdf_find '{"file":"samples/out/mixed.pdf","query":"quiet valley"}'
-cargo run --bin engine-pdf -- call pdf_mathpix '{"file":"samples/out/mixed.pdf","pages":[8]}'   # 只报价，退出码 3
+cargo run --bin engine-pdf -- call pdf_mathpix '{"file":"samples/out/mixed.pdf","pages":[8]}'   # $0.005：照规矩直接执行（要 ENGINE_KEY_MATHPIX_APP_ID / _KEY）
 ```
 
-要确认的工具不加 `--yes` 只交回报价（退出码 3；命令行用 `tools::terminal_toolkit`，`pdf_mathpix` 每次都要 `--yes`）。`--out` 指定附件目录（默认新建临时目录），`--json-only` 标准输出只交 `data`。带 PDFium 的构建照 `scripts/check.sh` 设 `PDFIUM_STATIC_LIB_PATH`。
+照花钱的规矩要问的（一次超过 $0.5、算不出、或 Mathpix 最近 24 小时合计超过 $5）不加 `--yes` 只交回报价和原因（退出码 3）；Agent 先在对话里问站主，同意了再加 `--yes`。命令行记账的 App 名是「命令行」。`--out` 指定附件目录（默认新建临时目录），`--json-only` 标准输出只交 `data`。带 PDFium 的构建照 `scripts/check.sh` 设 `PDFIUM_STATIC_LIB_PATH`。
 
 ## 三个 App 接哪些
 

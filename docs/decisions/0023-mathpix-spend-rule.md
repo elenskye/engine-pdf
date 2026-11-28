@@ -1,5 +1,7 @@
 # 0023 Mathpix 花钱的规矩和共用账本
 
+> 同一天下午改：规矩和账本搬进 engine-core v0.4.0 的 `spend`（总仓库 `decisions/0011`），`mathpix::spend` 只再导出；工具包照账本定要不要问，`pdf_mathpix` 不再自己问；账本改在 `<底>/engine-pdf/mathpix-ledger.jsonl`（`ENGINE_LEDGER_DIR`、`Ledger::At(底)` 改底，`ENGINE_PDF_LEDGER` 不用了）；命令行和 App 一样照规矩。下面「命令行照旧」那条作废。
+
 2026-11-28 站主定（Pomelo 1.2.0 Phase 4 的 ASK）。改了 v0.7.0「`pdf_mathpix` 每次确认」。
 
 ## 定的
