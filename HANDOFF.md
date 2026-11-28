@@ -1,25 +1,20 @@
 # HANDOFF
 
-更新于 2026-11-28。**v0.7.0 已发**（tag `v0.7.0`，等站主 push）：Agent 工具包 + `pdf_find`，钉 engine-core `v0.2.1`。下一步是三个 App 照工具包接，计划在 `ROADMAP.md`。
+更新于 2026-11-28。**v0.8.0 进行中**（跟着 Pomelo 1.2.0 做，还没打 tag；v0.7.0 已发、已推）。Pomelo 用 `[patch]` 指本机这份开发。
 
-## 这一版
+## 这一版（v0.8.0，到现在）
 
-Codex 实施 Phase 1–5，本机 Claude 审核两轮后改了（详见 `ROADMAP.md`「已完成的版本」、`decisions/0021`、`0022`）：
+本机 Claude 在 Pomelo 1.2.0 Phase 4 的会话里直接改（总仓库 `decisions/0009`），接口变化记在 `CHANGELOG.md`「v0.8.0（开发中）」：
 
-- **查找**：扫描件盖了页码、水印的页照样识别；所选页大多是文字页时只识别完全没字的页（文字版论文不用等识别模型冷启动）；按文件内容的内存缓存（`src/sys/cache.rs`，约 64 MiB）；跨行处两份取字的换行写法不同也能对位。
-- **开 `pdfium` 时补连字、收紧中文框**（站主 2026-11-27 定）：`src/ligatures.rs` 按 PDFium 同一页的词表把 PDFKit 取丢连字的词换回来，`read`、`find` 都用；每份文件看第一张有连字的页决定要不要补。中文命中框高超过字宽 1.6 倍时按 PDFium 的整行上下沿收紧（`src/sys/layer.rs`）。PDFium 被别的代码先绑定时不崩。
-- **工具**：`pdf_read` 加 `max_images`（给 Peck 按窗口定张数）；`pdf_edit` 改动单的清单写全；越界页报 `bad_args`；`pdf_find`、`pdf_objects` 的 Markdown 理顺。
-- **engine-core v0.2.1**：软连字符后跟空格不再拼词（已推）。
-- **接入计划**：Peck 1.4.0、Pomelo 1.2.0 按站主 2026-11-27/28 的回答重写（`ROADMAP.md`、design §4、`docs/toolkit.md`「三个 App 接哪些」）。
+- **Mathpix 花钱的规矩和共用账本**（站主 2026-11-28 定，`decisions/0023`）：一次超过 $0.5 或算不出费用、或所有 App 最近 24 小时合计加上这一次超过 $5 才问；`pdf_mathpix` 上传前自己判断、经 `Ctx.approve` 问，清单的确认改成 `never`；`pdf_mathpix_quote` 带 `ask`、`why`。每次真正上传记进 `~/Library/Application Support/engine-pdf/mathpix-ledger.jsonl`（`ENGINE_PDF_LEDGER` 可改，模拟的传输不记），`Options` 多了 `ledger`、`app`。命令行用 `tools::terminal_toolkit`，照旧不加 `--yes` 只报价。Peck 1.4.0 原定的「每次弹确认」照新规矩改（`ROADMAP.md` 已注）。
+- **页图上画框**：`Document::page_box` + `PageBox::on_image`（四种旋转、CropBox 偏移），App 把 `pdf_find` 的框画到 `render` 的页图上用。
+- **工具层多导出**：`tools::Toolkit`、`Prepared`、`to_openai`、`to_anthropic`（App 不用再直接依赖 engine-core）。
 
 ## 验证
 
-- `./scripts/check.sh`：通过（默认、`samples,fake`、`samples,fake,pdfium` 的测试和 Clippy，Web 类型检查和测试），日志 `local/v070-review/check-final.log`。Linux `cargo check --all-features` 通过。
-- **补连字**：39 份真实 PDF 全文比对开、关 `pdfium` 读出的文字，只有 Arpino、Phoenix 两篇有替换，共 546 处，逐条看过全对（`local/v070-review/repairs.log`）；Phoenix 全文 `fi` 从 3 处回到 388 处。
-- **字框**：110 个随机短语 106 处框内文字正确，其余 4 处是抽样脚本按 PDFium 的顺序拼了表格和参考文献（`find-batch-fixes.log`）；李蓉蓉那篇的框从 24.8 pt 收到 13 pt，叠图核对贴字。
-- **速度**：84 页杂志全书查找第一次约 3.6 秒、同一进程第二次 0.5 秒；5 页扫描件第一次 2.2 秒、第二次几乎瞬间（不含识别模型冷启动）。
-- **命令行和试用页**：17 个工具在真实论文、杂志、扫描件上各跑过；试用页查找（繁简、扫描页、按词、上一个/下一个）在内置浏览器里实测。
-- 没做：Mathpix 真跑（本版没改上传）；App 接入。
+- `./scripts/check.sh`：通过（三种配置的测试和 Clippy、Web 检查和测试）。新测试：花钱规矩（单次、24 小时、各 App 合计、写坏的行跳过）、工具层按规矩问和拒绝零请求、真上传进账本而模拟的不进、四种旋转加 CropBox 偏移的框落在字上。
+- 在 Pomelo 里：知网论文（CropBox 和 MediaBox 不同）找「政治效能感」，框正好落在标题那几个字上；Pomelo 的测试覆盖了按规矩出卡片、拒绝不上传。
+- 没做：Mathpix 真跑（上传的代码只多了记账，Pomelo Phase 6 一起真跑）。
 
 ## 已知问题
 
@@ -29,12 +24,12 @@ Codex 实施 Phase 1–5，本机 Claude 审核两轮后改了（详见 `ROADMAP
 
 ## 等站主
 
-- push engine-pdf：`cd ~/Documents/GitHub/personal-engine-studio/engine-pdf && git push origin main --tags`
+- 不急：v0.8.0 的提交在本机 `main` 上，打 tag 前推不推都行（Pomelo 现在用本机路径）。
 
 ## 下一步
 
 - **Peck 1.4.0**：Peck 1.3.0 做完后在 Peck 仓库开工，钉 `v0.7.0`（`ROADMAP.md`「v0.4.0」）。
-- **Pomelo 1.2.0**：Phase 1（换底层）、2（扫描件进知识库）在 Pomelo 仓库做完（2026-11-28，钉 `v0.7.0`、开 `pdfium`，引擎没改），对照和验收写在 Pomelo 的 `docs/roadmap.md`「1.2.0」。到 Phase 5 时引擎补 `mathpix::convert` 和旧任务续跑，发 v0.8.0。
+- **Pomelo 1.2.0**：Phase 1–4 做完（对照和验收在 Pomelo 的 `docs/roadmap.md`「1.2.0」）。Phase 5 时引擎补 `mathpix::convert` 和从 Pomelo 旧任务接着跑的 `Submitted`（Word 的 `submit_file` 记账要按服务报的页数补记），Phase 6 打 tag `v0.8.0`。
 - **Pith（v0.9.0）**：大纲在 `ROADMAP.md`，开工前细化。
 
 ## Mathpix 真跑
