@@ -1,7 +1,7 @@
 {
   "name": "pdf_mathpix_quote",
   "title": "给 Mathpix 识别报价",
-  "description": "本地计算选中 PDF 页的 Mathpix 价格。确认是否上传前可先用这个工具。",
+  "description": "本地计算选中 PDF 页的 Mathpix 价格，并说明这一次调用 pdf_mathpix 时要不要先问用户（一次超过 $0.5，或所有 App 最近 24 小时合计加上这一次超过 $5 要问）。",
   "params": {
     "type": "object",
     "properties": {
@@ -19,9 +19,11 @@
       "service": {"type": "string"},
       "unit": {"type": "string"},
       "units": {"type": "number", "minimum": 0},
-      "usd": {"type": "number", "minimum": 0}
+      "usd": {"type": "number", "minimum": 0},
+      "ask": {"type": "boolean", "description": "调用 pdf_mathpix 时要不要先问用户。"},
+      "why": {"type": "string", "description": "要问的原因；不用问时为空。"}
     },
-    "required": ["pages", "usd_per_unit", "service", "unit", "units", "usd"]
+    "required": ["pages", "usd_per_unit", "service", "unit", "units", "usd", "ask"]
   },
   "errors": [
     {"kind": "not_pdf", "message": "这不是 PDF 文件。", "hint": "请换一份 PDF。", "retry": false},

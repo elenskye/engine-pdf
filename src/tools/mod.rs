@@ -35,6 +35,18 @@ pub fn toolkit() -> &'static Toolkit<mathpix::Options> {
     &DEFAULT
 }
 
+/// 命令行用的：花钱的工具不加 `--yes` 只报价（总仓库 GUIDE「一」），每次都先问；另照 `mathpix::spend` 的规矩。
+/// App 给模型用 `toolkit_with_mathpix`：照规矩该问时才问。
+pub fn terminal_toolkit(options: mathpix::Options) -> Toolkit<mathpix::Options> {
+    let always = Override {
+        confirm: Some(Confirm::Always),
+        ..Override::default()
+    };
+    toolkit_with_mathpix(options)
+        .with_overrides(&[("pdf_mathpix".to_string(), always)].into())
+        .expect("内置的命令行覆盖")
+}
+
 /// 给 App 注入 Mathpix 选项，或在同一套入口上模拟传输。单价由调用上下文的 Prices 决定。
 pub fn toolkit_with_mathpix(options: mathpix::Options) -> Toolkit<mathpix::Options> {
     let handlers = [

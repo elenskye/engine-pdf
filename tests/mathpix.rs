@@ -81,7 +81,7 @@ fn freezes_quote_uploads_only_selected_pages_and_retries_pending_zip() {
         .unwrap()
         .clone(),
         poll_interval: Duration::from_millis(1),
-        ..Options::default()
+        ..quiet()
     };
     let quote = mathpix::quote_with_options(&original, &[8, 2, 8], &options).unwrap();
     assert_eq!(quote.pages(), [2, 8]);
@@ -209,7 +209,7 @@ fn echo_uploads_original_whole_pdf_and_preserves_blank_last_page() {
         transport: fake.clone(),
         lines: true,
         mmd_zip: true,
-        ..Options::default()
+        ..quiet()
     };
     let keys = Keys::new("mock-id", "mock-key");
     let quote = mathpix::quote(&document, &[2, 1]).unwrap();
@@ -257,7 +257,7 @@ fn resumes_a_serialized_submission_and_preserves_reported_usage() {
     let options = Options {
         transport: fake.clone(),
         lines: true,
-        ..Options::default()
+        ..quiet()
     };
     let keys = Keys::new("mock-id", "mock-key-never-serialized");
     let cancel = Cancel::new();
@@ -311,7 +311,7 @@ fn run_returns_usage_and_deletes_after_processing_errors_and_timeouts() {
         ]));
         let options = Options {
             transport: fake.clone(),
-            ..Options::default()
+            ..quiet()
         };
         let failure =
             mathpix::run(&document, &quote, &keys, &options, &cancel, &|_| {}).unwrap_err();
@@ -357,7 +357,7 @@ fn a_rejected_upload_is_never_retried_and_a_returned_job_id_is_cleaned_up() {
         ]));
         let opts = Options {
             transport: fake.clone(),
-            ..Options::default()
+            ..quiet()
         };
         let failure = mathpix::run(&doc, &quote, &keys, &opts, &cancel, &|_| {}).unwrap_err();
         assert!(matches!(&failure.error, Error::Mathpix(error) if error.kind == kind));
@@ -386,7 +386,7 @@ fn checks_cancellation_before_upload_and_deletes_after_upload() {
     ]));
     let options = Options {
         transport: fake.clone(),
-        ..Options::default()
+        ..quiet()
     };
     let keys = Keys::new("mock-id", "mock-key");
     let quote = mathpix::quote(&document, &[2]).unwrap();
@@ -424,7 +424,7 @@ fn echo_file_submission_has_no_original_page_mapping() {
     let fake = Arc::new(FakeTransport::echo());
     let options = Options {
         transport: fake.clone(),
-        ..Options::default()
+        ..quiet()
     };
     let keys = Keys::new("mock-id", "mock-key");
     let cancel = Cancel::new();
@@ -444,4 +444,57 @@ fn echo_file_submission_has_no_original_page_mapping() {
     assert!(recognized.mmd.contains("模拟识别"));
     assert_eq!(recognized.usage.usd, 0.0);
     assert!(mathpix::delete(&submitted, &keys, &options));
+}
+
+/// 测试不碰所有 App 共用的账本。
+fn quiet() -> Options {
+    Options {
+        ledger: engine_pdf::mathpix::spend::Ledger::Off,
+        ..Options::default()
+    }
+}
+
+#[test]
+fn every_real_upload_goes_into_the_shared_ledger_and_simulated_ones_do_not() {
+    use mathpix::spend::Ledger;
+    let dir = std::env::temp_dir().join(format!("engine-pdf-ledger-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let ledger = Ledger::At(dir.join("ledger.jsonl"));
+    let doc = Document::from_bytes(&Sample::Mixed.generate().unwrap()).unwrap();
+    let keys = Keys::new("fixture-app", "fixture-key");
+    let scripted = Arc::new(FakeTransport::scripted([
+        reply(200, ACCEPTED),
+        reply(200, COMPLETE),
+        reply(200, "One\n\\pagebreak\nTwo\n\\pagebreak\n"),
+        reply(204, []),
+    ]));
+    let options = Options {
+        transport: scripted,
+        price_per_page: 0.0125,
+        poll_interval: Duration::from_millis(1),
+        ledger: ledger.clone(),
+        app: "Pomelo".into(),
+        ..quiet()
+    };
+    let quote = mathpix::quote_with_options(&doc, &[2, 8], &options).unwrap();
+    mathpix::run(&doc, &quote, &keys, &options, &Cancel::new(), &|_| {}).unwrap();
+    let entries = ledger.entries(std::time::UNIX_EPOCH);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        (
+            entries[0].app.as_str(),
+            entries[0].service.as_str(),
+            entries[0].pages,
+            entries[0].usd
+        ),
+        ("Pomelo", "Mathpix", 2, 0.025)
+    );
+    // the echo (simulated) one: nothing recorded
+    let echo = Options {
+        transport: Arc::new(FakeTransport::echo()),
+        ..options
+    };
+    let quote = mathpix::quote_with_options(&doc, &[2], &echo).unwrap();
+    mathpix::run(&doc, &quote, &keys, &echo, &Cancel::new(), &|_| {}).unwrap();
+    assert_eq!(ledger.entries(std::time::UNIX_EPOCH).len(), 1);
 }

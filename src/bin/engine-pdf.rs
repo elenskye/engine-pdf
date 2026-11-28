@@ -1,3 +1,7 @@
 fn main() -> std::process::ExitCode {
-    engine_core::cli::run(engine_pdf::tools::toolkit())
+    let kit = engine_pdf::tools::terminal_toolkit(engine_pdf::mathpix::Options {
+        app: "engine-pdf".into(),
+        ..Default::default()
+    });
+    engine_core::cli::run(&kit)
 }

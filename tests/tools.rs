@@ -87,7 +87,7 @@ fn runs_every_manifest_example_with_generated_files_and_mock_mathpix() {
     let fake = Arc::new(FakeTransport::echo());
     let kit = tools::toolkit_with_mathpix(Options {
         transport: fake.clone(),
-        ..Options::default()
+        ..quiet()
     });
     let ctx = host.ctx(&cancel, &prices);
     assert_eq!(tools::manifest().len(), 17);
@@ -139,9 +139,10 @@ fn runs_every_manifest_example_with_generated_files_and_mock_mathpix() {
 fn mathpix_preparation_cannot_upload_and_zero_price_is_rejected() {
     let bytes = Sample::Mixed.generate().unwrap();
     let fake = Arc::new(FakeTransport::echo());
-    let kit = tools::toolkit_with_mathpix(Options {
+    // the terminal: a paid tool only quotes without --yes
+    let kit = tools::terminal_toolkit(Options {
         transport: fake.clone(),
-        ..Options::default()
+        ..quiet()
     });
     let mut pdf = NamedTempFile::new().unwrap();
     pdf.write_all(&bytes).unwrap();
@@ -234,7 +235,7 @@ fn app_overrides_affect_manifest_and_execution() {
         "pdf_info": {"disabled":true}
     }))
     .unwrap();
-    let kit = tools::toolkit_with_mathpix(Options::default())
+    let kit = tools::toolkit_with_mathpix(quiet())
         .with_overrides(&overrides)
         .unwrap();
     let ctx = host.ctx(&cancel, &prices);
@@ -309,4 +310,109 @@ fn host_passwords_and_read_continuation_are_scoped_to_the_call() {
     assert_eq!(pages[0]["index"], 6);
     assert_eq!(pages[4]["index"], 10);
     assert!(last.next.is_none());
+}
+
+/// 测试不碰所有 App 共用的账本。
+fn quiet() -> Options {
+    Options {
+        ledger: engine_pdf::mathpix::spend::Ledger::Off,
+        ..Options::default()
+    }
+}
+
+#[test]
+fn the_spend_rule_asks_above_half_a_dollar_or_past_five_a_day() {
+    use engine_pdf::mathpix::spend::{Entry, Ledger};
+    let dir = std::env::temp_dir().join(format!("engine-pdf-tools-spend-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let ledger = Ledger::At(dir.join("ledger.jsonl"));
+    let bytes = Sample::Mixed.generate().unwrap();
+    let fake = Arc::new(FakeTransport::echo());
+    let kit = tools::toolkit_with_mathpix(Options {
+        transport: fake.clone(),
+        ledger: ledger.clone(),
+        ..quiet()
+    });
+    let mut host = Host {
+        files: [("mixed".to_owned(), bytes)].into(),
+        secrets: [
+            ("mathpix_app_id".into(), "fixture-app".into()),
+            ("mathpix_app_key".into(), "fixture-key".into()),
+        ]
+        .into(),
+        yes: false,
+    };
+    let cancel = Cancel::new();
+    let prices = Prices::default();
+    let posts = || {
+        fake.requests()
+            .iter()
+            .filter(|r| r.method == Method::Post)
+            .count()
+    };
+    let args = json!({"file":"mixed","pages":[2]});
+    // $0.005: no one asked, it runs (simulated: nothing goes in the ledger)
+    let quote = kit
+        .call("pdf_mathpix_quote", &args, &host.ctx(&cancel, &prices))
+        .unwrap();
+    assert_eq!(
+        (quote.data["ask"].clone(), quote.data["why"].clone()),
+        (json!(false), json!(""))
+    );
+    assert!(quote.text.contains("不用先问用户"), "{}", quote.text);
+    kit.call("pdf_mathpix", &args, &host.ctx(&cancel, &prices))
+        .unwrap();
+    assert_eq!(posts(), 1);
+    assert!(ledger.entries(std::time::UNIX_EPOCH).is_empty());
+    // over $0.5 at once: asked; no means not a single request
+    let mut dear = Prices::default();
+    dear.set("Mathpix", "page", 0.3);
+    let two = json!({"file":"mixed","pages":[1,2]});
+    let quote = kit
+        .call("pdf_mathpix_quote", &two, &host.ctx(&cancel, &dear))
+        .unwrap();
+    assert_eq!(quote.data["ask"], true);
+    assert_eq!(
+        kit.call("pdf_mathpix", &two, &host.ctx(&cancel, &dear))
+            .unwrap_err()
+            .kind,
+        "denied"
+    );
+    assert_eq!(posts(), 1);
+    // every app's last day near $5: a small one is asked too
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    ledger
+        .record(&Entry {
+            at: now - 60,
+            app: "Peck".into(),
+            service: "Mathpix".into(),
+            pages: 999,
+            usd: 4.998,
+        })
+        .unwrap();
+    let quote = kit
+        .call("pdf_mathpix_quote", &args, &host.ctx(&cancel, &prices))
+        .unwrap();
+    assert!(
+        quote.data["why"]
+            .as_str()
+            .unwrap()
+            .contains("最近 24 小时已花"),
+        "{}",
+        quote.data
+    );
+    assert_eq!(
+        kit.call("pdf_mathpix", &args, &host.ctx(&cancel, &prices))
+            .unwrap_err()
+            .kind,
+        "denied"
+    );
+    assert_eq!(posts(), 1);
+    host.yes = true;
+    kit.call("pdf_mathpix", &args, &host.ctx(&cancel, &prices))
+        .unwrap();
+    assert_eq!(posts(), 2);
 }

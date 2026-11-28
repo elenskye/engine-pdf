@@ -1,10 +1,11 @@
-//! Mathpix 文档识别。先本地报价，App 确认后再提交。
+//! Mathpix 文档识别。先本地报价，照花钱的规矩（`spend`）要问时问过再提交。
 
 #[cfg(feature = "fake")]
 mod fake;
 mod job;
 mod mapping;
 mod protocol;
+pub mod spend;
 mod transport;
 
 use std::{fmt, sync::Arc, time::Duration};
@@ -152,7 +153,7 @@ fn validate_price(price: f64) -> Result<(), Error> {
     Ok(())
 }
 
-/// 提交、轮询和下载设置。App 负责费用确认和预算。
+/// 提交、轮询和下载设置。要不要先问用户照 `spend` 的规矩（工具层自己问），每次上传记进 `ledger`。
 #[derive(Clone)]
 pub struct Options {
     pub price_per_page: f64,
@@ -169,6 +170,10 @@ pub struct Options {
     /// 生产为 Mathpix；测试可用 127.0.0.1。
     pub base: String,
     pub transport: Arc<dyn Transport>,
+    /// 花钱的账本：默认所有 App 共用的那份；开发版、测试用 `At` 或 `Off`。模拟的传输不记。
+    pub ledger: spend::Ledger,
+    /// 记进账本的 App 名字（Peck、Pith、Pomelo）。
+    pub app: String,
 }
 
 impl Default for Options {
@@ -185,6 +190,8 @@ impl Default for Options {
             request_timeout: Duration::from_secs(120),
             base: BASE.into(),
             transport: Arc::new(UreqTransport::default()),
+            ledger: spend::Ledger::Shared,
+            app: String::new(),
         }
     }
 }

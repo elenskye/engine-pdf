@@ -137,6 +137,14 @@ fn upload(
         },
         num_pages: None,
     };
+    // 拿到任务就算花了（之后失败也收费）：记进所有 App 共用的账本，记不上不挡识别
+    if !opts.transport.is_simulated() {
+        let _ = opts.ledger.record(&super::spend::entry(
+            &opts.app,
+            pages_sent,
+            f64::from(pages_sent) * price_per_page,
+        ));
+    }
     if let Some(error) = error {
         let mut failure = submitted.failure(error);
         failure.usage.remote_deleted = Some(delete(&submitted, keys, opts));

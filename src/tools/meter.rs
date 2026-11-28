@@ -47,8 +47,16 @@ fn price(ctx: &Ctx<'_>) -> Result<f64, ToolError> {
     }
 }
 
+/// 这个工具的清单（问用户时交给 `Approve`）。
+fn spec() -> &'static engine_core::tool::ToolSpec {
+    super::manifest()
+        .iter()
+        .find(|spec| spec.name == "pdf_mathpix")
+        .expect("内置 pdf_mathpix 清单")
+}
+
 pub(super) fn quote(
-    _: &mathpix::Options,
+    options: &mathpix::Options,
     args: &Value,
     ctx: &Ctx<'_>,
     _: Option<&Quote>,
@@ -57,12 +65,19 @@ pub(super) fn quote(
     let doc = open(args, ctx.files, ctx.cancel)?;
     let native = mathpix::quote_at_price(&doc, &selected(args)?, price)?;
     let quote = Quote::from(&native);
+    let why = options.ledger.approval(Some(quote.usd));
     let mut data = json!(quote);
     data["pages"] = json!(native.pages());
     data["usd_per_unit"] = json!(price);
+    data["ask"] = json!(why.is_some());
+    data["why"] = json!(why.map(|why| why.to_string()).unwrap_or_default());
+    let ask = match why {
+        Some(why) => format!("调用 pdf_mathpix 时会先问用户：{why}"),
+        None => "调用 pdf_mathpix 不用先问用户。".into(),
+    };
     Ok(Output {
         text: format!(
-            "Mathpix 选中物理页 {}，每页 ${price}，预计 ${}。",
+            "Mathpix 选中物理页 {}，每页 ${price}，预计 ${}。{ask}",
             native.pages_text(),
             quote.usd
         ),
@@ -89,6 +104,10 @@ pub(super) fn run(
     let native = mathpix::quote_with_options(&doc, &selected(args)?, &opts)?;
     if native.pages().len() as f64 != quote.units {
         return Err(bad_args("文件或选页已变化，请重新报价并确认。"));
+    }
+    // 花钱的规矩（mathpix::spend）：要问时问过才上传，不同意就一个请求都不发
+    if options.ledger.approval(Some(quote.usd)).is_some() && !ctx.approve.ask(spec(), Some(quote)) {
+        return Err(ToolError::of("denied"));
     }
     let key = |name| ctx.keys.get(name).ok_or_else(|| ToolError::of("auth"));
     let keys = mathpix::Keys::from_zeroizing(key("mathpix_app_id")?, key("mathpix_app_key")?);

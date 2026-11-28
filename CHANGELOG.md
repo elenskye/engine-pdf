@@ -2,6 +2,11 @@
 
 记录各版本的公共接口变化和 App 升级事项。
 
+## v0.8.0（开发中，跟着 Pomelo 1.2.0）
+
+- **Mathpix 花钱的规矩和共用账本**（`decisions/0023`）：`mathpix::spend`（`Ledger`、`Entry`、`Why`，`ASK_ABOVE_USD` $0.5、`DAY_LIMIT_USD` $5、`WINDOW` 24 小时）。`pdf_mathpix` 的清单确认改成 `never`，上传前按规矩自己经 `Ctx.approve` 问；`pdf_mathpix_quote` 的结果多了 `ask`、`why`。`mathpix::Options` 多了 `ledger`（默认共用账本）和 `app`；每次真正上传记一行。命令行改用 `tools::terminal_toolkit`（`pdf_mathpix` 每次要 `--yes`）。
+- **App 升级要改的**：用字面量建 `mathpix::Options` 的要补 `ledger`、`app`（或 `..Default::default()`）；开发版和测试设 `ledger: Ledger::At(…)` 或 `Ledger::Off`，别写进共用账本；`Approve` 现在只在规矩要求时被问。
+
 ## v0.7.0
 
 - **工具包**：17 个工具（`tools/*.json`），`tools::manifest`、`tools::call`、`tools::toolkit_with_mathpix`，命令行 `engine-pdf tools / describe / call`。App 按工具名覆盖说明、默认值、上限、确认或关掉；页图和新文件作附件；Mathpix 先报价、每次确认才联网。`pdf_read` 有 `max_images`（App 按模型窗口定一次附几张）。接线见 `docs/toolkit.md`。

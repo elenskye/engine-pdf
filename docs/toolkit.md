@@ -46,10 +46,11 @@ let output = kit.call("pdf_read", &args, &ctx)?;
 | `pdf_edit`、`pdf_searchable`、`pdf_compose_images`、`pdf_assemble`、`pdf_split` | 本机，交回新文件 | 不问 |
 | `pdf_redact` | 本机，交回新文件 | 每次问 |
 | `pdf_mathpix_quote` | 免费，只在本机报价 | 不问 |
-| `pdf_mathpix` | 每个选中物理页 $0.005 | 每次问 |
+| `pdf_mathpix` | 每个选中物理页 $0.005 | 一次超过 $0.5、或所有 App 最近 24 小时合计加上这一次超过 $5 才问（`decisions/0023`） |
 
 - `pdf_objects`、`pdf_redact` 要 `pdfium` feature；没开时照样列出，调用报 `pdfium_unavailable`。
 - `pdf_mathpix` 只上传确认过的那几页（升序去重）、不上传加密 PDF；报价和执行之间 App 要保持同一份文件内容。
+- **花钱的规矩和账本**（`mathpix::spend`）：`pdf_mathpix` 上传前自己按规矩判断，要问时经 `Ctx.approve` 问（不同意就一个请求都不发）；`pdf_mathpix_quote` 的结果带 `ask`、`why`。每次真正上传记进所有 App 共用的账本 `~/Library/Application Support/engine-pdf/mathpix-ledger.jsonl`（`ENGINE_PDF_LEDGER` 可改，模拟的传输不记），App 用 `Options.app` 写上自己的名字、用 `Ledger::entries` 读。开发版和测试设 `Options.ledger` 为 `Ledger::At(自己的文件)` 或 `Ledger::Off`。先弹卡片再执行的 App 用 `Options.ledger.approval(Some(usd))` 拿同一个判断。
 
 ## 命令行
 
@@ -62,7 +63,7 @@ cargo run --bin engine-pdf -- call pdf_find '{"file":"samples/out/mixed.pdf","qu
 cargo run --bin engine-pdf -- call pdf_mathpix '{"file":"samples/out/mixed.pdf","pages":[8]}'   # 只报价，退出码 3
 ```
 
-要确认的工具不加 `--yes` 只交回报价（退出码 3）。`--out` 指定附件目录（默认新建临时目录），`--json-only` 标准输出只交 `data`。带 PDFium 的构建照 `scripts/check.sh` 设 `PDFIUM_STATIC_LIB_PATH`。
+要确认的工具不加 `--yes` 只交回报价（退出码 3；命令行用 `tools::terminal_toolkit`，`pdf_mathpix` 每次都要 `--yes`）。`--out` 指定附件目录（默认新建临时目录），`--json-only` 标准输出只交 `data`。带 PDFium 的构建照 `scripts/check.sh` 设 `PDFIUM_STATIC_LIB_PATH`。
 
 ## 三个 App 接哪些
 

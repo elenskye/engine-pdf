@@ -1,7 +1,7 @@
 {
   "name": "pdf_mathpix",
   "title": "用 Mathpix 识别 PDF",
-  "description": "用 Mathpix 识别选中的 PDF 页，适合公式和复杂排版。执行前按实际选页报价，默认每次确认，仅上传这些页。加密 PDF 请先由用户授权导出无密码副本。",
+  "description": "用 Mathpix 识别选中的 PDF 页，适合公式和复杂排版。执行前按实际选页报价，只上传这些页。一次超过 $0.5，或所有 App 最近 24 小时合计加上这一次超过 $5 时，引擎会先问用户（不同意就不上传）；否则直接上传。加密 PDF 请先由用户授权导出无密码副本。",
   "params": {
     "type": "object",
     "properties": {
@@ -36,7 +36,7 @@
     {"kind": "mathpix_result_missing", "message": "Mathpix 的识别结果暂不可用。", "hint": "请先检查原任务的识别结果是否已生成。", "retry": true}
   ],
   "cost": {"kind": "metered", "service": "Mathpix", "unit": "page", "usd_per_unit": 0.005},
-  "confirm": {"kind": "always"},
+  "confirm": {"kind": "never"},
   "effects": {"network": true, "writes": "none"},
   "examples": [
     {"args": {"file": "samples/out/mixed.pdf", "pages": [8, 2, 8]}, "expect": {"data": {"pages": [2, 8], "mapping": "exact"}}}

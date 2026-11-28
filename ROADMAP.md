@@ -38,7 +38,7 @@
 - **版本**（2026-11-27 ASK）：Peck 1.3.0（评测基线）做完后的 **1.4.0**，算新增功能、分 Phase，最后一期装正式版；改前后各跑一轮 Peck 的评测。改动在 Peck 仓库照 Peck 的 `CLAUDE.md` 做，开工时 Peck 的会话把下表抄进 Peck 的 `docs/roadmap.md`。
 - **工具**（2026-11-27）：引擎的只读工具 `pdf_info`、`pdf_read`、`pdf_render`、`pdf_ocr`、`pdf_find`、`pdf_outline`、`pdf_annotations`、`pdf_fields`，加 Mathpix 的 `pdf_mathpix_quote`、`pdf_mathpix`；替掉 Peck 的 `read_pdf`、`ocr_pdf`。改文件的先不给。工具名不改；Peck 的工具说明是英文，要英文就按工具名覆盖说明。不开 `pdfium`。
 - **页图**（2026-11-27）：保留 Peck 1.1.12 的按窗口定张数（每 5 万 token 一张），填进 `pdf_read` 的 `max_images`；超出的页引擎会写明怎么拿到图。
-- **Mathpix 每次弹确认**（2026-11-25）：第几页、预计费用；「一直允许」只在这个任务里有效。真跑额度：DeepSeek 10 次尝试 + Mathpix $0.05，记进 Peck 的账本；密钥沿用 Pith 那份。
+- **Mathpix 照引擎的花钱规矩**（2026-11-28 改，`decisions/0023`：一次超过 $0.5、或所有 App 最近 24 小时合计加上这一次超过 $5 才弹确认）。原定（2026-11-25）：第几页、预计费用；「一直允许」只在这个任务里有效。真跑额度：DeepSeek 10 次尝试 + Mathpix $0.05，记进 Peck 的账本；密钥沿用 Pith 那份。
 
 | Phase | 做什么 | 做完的样子 |
 | --- | --- | --- |
@@ -78,7 +78,7 @@
 | 5 Pub2MD | 原页图改 `read_each` 逐页画、逐页存、能取消；Mathpix 换成 `submit`（`Submitted` 存进任务文件）、`wait`、`fetch`、`delete`，Word 走 `submit_file`，转 Word、LaTeX 走 `mathpix::convert`，报价和确认照引擎的规矩；模拟模式换 `FakeTransport::echo()`；删掉 `pub2md/mathpix.rs`；旧任务文件升级后照样续跑 | 模拟服务跑完照片、PDF、Word 三种；中途退出再继续不重复上传；旧版留下的半截任务能续跑 |
 | 6 收尾 | 钉 `v0.8.0`；下面的验收；升级测试后装正式版；两边的文档和 HANDOFF；真跑 Mathpix（含一次转换）在每版 $1 内 | 验收都过；打 tag `v0.8.0` |
 
-**引擎这边要补的**（engine-pdf v0.8.0）：`mathpix::convert`（`fake` 里也能模拟）；从 Pomelo 旧任务接着跑的 `Submitted`（旧任务文件存的是自己的 `pdf_id`、上传的是整份）。Pomelo 先钉 `v0.7.0`，收尾改钉 `v0.8.0`。
+**引擎这边要补的**（engine-pdf v0.8.0）：Mathpix 花钱的规矩和所有 App 共用的账本（`mathpix::spend`，`decisions/0023`，Pomelo Phase 4 时做完）；`mathpix::convert`（`fake` 里也能模拟）；从 Pomelo 旧任务接着跑的 `Submitted`（旧任务文件存的是自己的 `pdf_id`、上传的是整份）。Pomelo 先钉 `v0.7.0`，收尾改钉 `v0.8.0`。
 
 **验收**（Pomelo 没有评测，用真实提问各过几遍）：带 PDF 附件提问，回答引用的页码对；查知识库里的扫描件，能找到、能引用；中文、繁简、跨行的句子能找到；云端模型能看页图、本地模型不给图；Mathpix 先报价、确认了才上传；见字如面导出的 PDF 链接、目录、标题都在。
 
