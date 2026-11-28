@@ -15,6 +15,8 @@ let output = kit.call("pdf_read", &args, &ctx)?;
 
 不注入 Mathpix 选项时直接用 `tools::manifest()`、`tools::call()`。阻塞调用放在 App 的工作线程；`Document` 在同一线程开、用、关。工具层的类型（`Ctx`、`ToolError`、`Quote`、`Usage`……）都在 `engine_pdf::tools` 下。
 
+App 在自己的界面里把 `pdf_find` 的框画到页图上：`Document::page_box(page)?.on_image(&rect)` 交回页图上的位置（左上原点、按比例）。
+
 `Ctx` 每次调用由 App 交：
 
 | 字段 | App 交什么 |

@@ -5,6 +5,7 @@
 ## v0.8.0（开发中，跟着 Pomelo 1.2.0）
 
 - **Mathpix 花钱的规矩和共用账本**（`decisions/0023`）：`mathpix::spend`（`Ledger`、`Entry`、`Why`，`ASK_ABOVE_USD` $0.5、`DAY_LIMIT_USD` $5、`WINDOW` 24 小时）。`pdf_mathpix` 的清单确认改成 `never`，上传前按规矩自己经 `Ctx.approve` 问；`pdf_mathpix_quote` 的结果多了 `ask`、`why`。`mathpix::Options` 多了 `ledger`（默认共用账本）和 `app`；每次真正上传记一行。命令行改用 `tools::terminal_toolkit`（`pdf_mathpix` 每次要 `--yes`）。
+- **页图上画框**：`Document::page_box(page)` 交回 CropBox 和旋转，`PageBox::on_image(&rect)` 把查找、OCR 的框（PDF 坐标）换成 `render` 页图上的位置（左上原点、按宽高比例），四种旋转和 CropBox 偏移都对。
 - **App 升级要改的**：用字面量建 `mathpix::Options` 的要补 `ledger`、`app`（或 `..Default::default()`）；开发版和测试设 `ledger: Ledger::At(…)` 或 `Ledger::Off`，别写进共用账本；`Approve` 现在只在规矩要求时被问。
 
 ## v0.7.0

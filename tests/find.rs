@@ -262,3 +262,55 @@ fn recognizes_scans_that_carry_only_a_short_text_stamp() {
     .unwrap();
     assert_eq!((found.total, found.hits[0].source), (1, Source::Text));
 }
+
+#[test]
+fn a_hit_box_lands_on_its_words_in_the_page_image() {
+    for rotate in [0, 90, 180, 270] {
+        let bytes = raw_pdf(
+            "",
+            &[(
+                &format!("/MediaBox [0 0 300 400] /CropBox [30 50 270 350] /Rotate {rotate}"),
+                "BT /F1 14 Tf 90 240 Td (anchor text) Tj ET",
+            )],
+        );
+        let document = Document::from_bytes(&bytes).unwrap();
+        let found = find(
+            &document,
+            &[1],
+            &Query::new("anchor"),
+            &Options { ocr: None },
+            &Cancel::new(),
+            &|_, _| {},
+        )
+        .unwrap();
+        let on = document
+            .page_box(1)
+            .unwrap()
+            .on_image(&found.hits[0].location.rects[0]);
+        let image = document
+            .render(1, engine_pdf::ImageFormat::Gray, 1200)
+            .unwrap();
+        let (w, h) = (image.width as f64, image.height as f64);
+        let dark = |x0: f64, y0: f64| {
+            let (mut dark, mut all) = (0usize, 0usize);
+            for y in (y0 * h).max(0.0) as usize
+                ..(((y0 + on.height) * h) as usize).min(image.height as usize)
+            {
+                for x in (x0 * w).max(0.0) as usize
+                    ..(((x0 + on.width) * w) as usize).min(image.width as usize)
+                {
+                    all += 1;
+                    dark += usize::from(image.bytes[y * image.width as usize + x] < 160);
+                }
+            }
+            dark as f64 / all.max(1) as f64
+        };
+        let inside = dark(on.x, on.y);
+        // the same box moved off the words (across the page from them) is blank
+        let elsewhere = dark(1.0 - on.x - on.width, 1.0 - on.y - on.height);
+        assert!(
+            inside > 0.08 && elsewhere < 0.01,
+            "rotate {rotate}: inside {inside}, elsewhere {elsewhere}, {on:?}"
+        );
+    }
+}

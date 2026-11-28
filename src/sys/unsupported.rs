@@ -84,6 +84,10 @@ impl Pdf {
         match self.0 {}
     }
 
+    pub(crate) fn page_box(&self, _: u32) -> Result<(crate::edit::Rect, i32), Error> {
+        match self.0 {}
+    }
+
     pub(crate) fn ocr(&self, _: u32, _: &OcrOptions, _: bool) -> Result<Vec<Observation>, Error> {
         match self.0 {}
     }

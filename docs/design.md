@@ -48,6 +48,7 @@ doc.page_count();                        // u32
 doc.label(8);                            // Option<String>：第 8 页印的页码（/PageLabels），如 "vi"；没定义时 PDFKit 给 "8"
 doc.text(8)?;                            // String：PDFKit 原始文字层，扫描页为空字符串
 doc.render(8, ImageFormat::Png, 1568)?;   // Image：白底，画 CropBox（阅读器显示的范围），带旋转，最长边 1568 像素
+doc.page_box(8)?;                        // PageBox：CropBox 和旋转；.on_image(&rect) 把 PDF 坐标的框换成页图上的位置（左上原点、按比例）
 doc.ocr(8, &OcrOptions::default())?;      // OcrText：主动使用 Vision 识别，why 为 Requested
 doc.image_counts(&cancel)?;              // Vec<(u32, usize)>：有图片资源的物理页和数量
 doc.split(&[8, 2, 8], &cancel)?;          // Vec<u8>：按指定顺序复制页面，允许重复

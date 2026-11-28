@@ -8,7 +8,7 @@ use objc2::AnyThread;
 use objc2::rc::{Retained, autoreleasepool};
 use objc2_core_graphics::{CGPDFArray, CGPDFDictionary, CGPDFDocument, CGPDFPage, CGPDFStream};
 use objc2_foundation::{NSCopying, NSData, NSString};
-use objc2_pdf_kit::{PDFDocument, PDFDocumentPermissions, PDFPage};
+use objc2_pdf_kit::{PDFDisplayBox, PDFDocument, PDFDocumentPermissions, PDFPage};
 use zeroize::Zeroizing;
 
 use crate::ocr::Observation;
@@ -259,6 +259,25 @@ impl Pdf {
     ) -> Result<Image, Error> {
         self.with_page(page, |native_page| {
             super::render::render(native_page, page, format, max_side)
+        })
+    }
+
+    pub(crate) fn page_box(&self, page: u32) -> Result<(crate::edit::Rect, i32), Error> {
+        self.with_page(page, |native_page| {
+            // SAFETY: 页面在当前线程有效；和 `render` 画的是同一个 CropBox、同一个旋转。
+            let (bounds, rotation) = unsafe {
+                (
+                    native_page.boundsForBox(PDFDisplayBox::CropBox),
+                    native_page.rotation(),
+                )
+            };
+            let crop = crate::edit::Rect {
+                x: bounds.origin.x,
+                y: bounds.origin.y,
+                width: bounds.size.width,
+                height: bounds.size.height,
+            };
+            Ok((crop, rotation as i32))
         })
     }
 

@@ -100,6 +100,16 @@ impl Document {
         self.0.render(page, format, max_side)
     }
 
+    /// 第 `page` 页阅读器显示的范围（CropBox，PDF 坐标）和页面旋转，和 `render` 画的一样。
+    /// App 把查找的框画到页图上时用 `PageBox::on_image`。
+    pub fn page_box(&self, page: u32) -> Result<PageBox, Error> {
+        let (crop, rotation) = self.0.page_box(page)?;
+        Ok(PageBox {
+            crop,
+            rotation: rotation.rem_euclid(360),
+        })
+    }
+
     /// 统计具有图片 XObject 的物理页及数量，按页码升序返回。
     /// 与 Pomelo 一致，忽略任一边不足 32 像素的图像。
     pub fn image_counts(&self, cancel: &Cancel) -> Result<Vec<(u32, usize)>, Error> {
@@ -148,4 +158,93 @@ pub struct Image {
     pub width: u32,
     pub height: u32,
     pub bytes: Vec<u8>,
+}
+
+/// 一页显示的范围：CropBox（PDF 坐标：pt、左下原点）和顺时针旋转（0、90、180、270）。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PageBox {
+    pub crop: crate::edit::Rect,
+    pub rotation: i32,
+}
+
+impl PageBox {
+    /// PDF 坐标里的框（查找、OCR 交回的那种）在 `render` 画出的页图上的位置：左上原点，
+    /// 按页图宽高的比例（0–1），超出页面的部分截掉。
+    pub fn on_image(&self, rect: &crate::edit::Rect) -> crate::edit::Rect {
+        let c = &self.crop;
+        if c.width <= 0.0 || c.height <= 0.0 {
+            return crate::edit::Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 0.0,
+            };
+        }
+        let clamp = |v: f64| v.clamp(0.0, 1.0);
+        // 不转时：从左量、从上量的比例
+        let (u0, u1) = (
+            clamp((rect.x - c.x) / c.width),
+            clamp((rect.x + rect.width - c.x) / c.width),
+        );
+        let (t0, t1) = (
+            clamp((c.y + c.height - rect.y - rect.height) / c.height),
+            clamp((c.y + c.height - rect.y) / c.height),
+        );
+        let (left, top, right, bottom) = match self.rotation {
+            90 => (1.0 - t1, u0, 1.0 - t0, u1),
+            180 => (1.0 - u1, 1.0 - t1, 1.0 - u0, 1.0 - t0),
+            270 => (t0, 1.0 - u1, t1, 1.0 - u0),
+            _ => (u0, t0, u1, t1),
+        };
+        crate::edit::Rect {
+            x: left,
+            y: top,
+            width: right - left,
+            height: bottom - top,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PageBox;
+    use crate::edit::Rect;
+
+    fn r(x: f64, y: f64, width: f64, height: f64) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn boxes_land_on_the_page_image_as_it_is_turned() {
+        // a 200 × 100 crop starting at (10, 20); the box sits near the top left
+        let page = |rotation| PageBox {
+            crop: r(10.0, 20.0, 200.0, 100.0),
+            rotation,
+        };
+        let hit = r(30.0, 100.0, 40.0, 10.0);
+        let close = |a: Rect, b: Rect| {
+            [
+                (a.x, b.x),
+                (a.y, b.y),
+                (a.width, b.width),
+                (a.height, b.height),
+            ]
+            .iter()
+            .all(|(p, q)| (p - q).abs() < 1e-9)
+        };
+        assert!(close(page(0).on_image(&hit), r(0.1, 0.1, 0.2, 0.1)));
+        assert!(close(page(90).on_image(&hit), r(0.8, 0.1, 0.1, 0.2)));
+        assert!(close(page(180).on_image(&hit), r(0.7, 0.8, 0.2, 0.1)));
+        assert!(close(page(270).on_image(&hit), r(0.1, 0.7, 0.1, 0.2)));
+        // outside the crop: cut off at the edge
+        assert!(close(
+            page(0).on_image(&r(-50.0, 100.0, 100.0, 10.0)),
+            r(0.0, 0.1, 0.2, 0.1)
+        ));
+    }
 }

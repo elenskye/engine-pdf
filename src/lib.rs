@@ -18,7 +18,7 @@ pub mod samples;
 mod sys;
 pub mod tools;
 
-pub use document::{Document, Image, ImageFormat};
+pub use document::{Document, Image, ImageFormat, PageBox};
 pub use engine_core::Cancel;
 pub use error::Error;
 pub use ocr::{OcrBounds, OcrLine, OcrOptions, OcrReason, OcrText, searchable};
