@@ -2,7 +2,7 @@
 
 记录各版本的公共接口变化和 App 升级事项。
 
-## v0.8.0（开发中，跟着 Pomelo 1.2.0）
+## v0.8.0（跟着 Pomelo 1.2.0）
 
 - **Mathpix 花钱的规矩和共用账本**（`decisions/0023`，总仓库 `decisions/0011`）：规矩和账本是 engine-core v0.4.0 的 `spend`，`mathpix::spend` 只再导出（`Ledger`、`Book`、`Entry`、`Why`，`ASK_ABOVE_USD` $0.5、`DAY_LIMIT_USD` $5、`WINDOW` 24 小时）。`mathpix::Options` 多了 `ledger`（默认共用账本）、`app` 和 `book()`（Mathpix 这一份账）；每次真正上传记一行到 `<底>/engine-pdf/mathpix-ledger.jsonl`。工具包照同一份账本定要不要问：`toolkit.call` 要问时经 `Ctx.approve` 问，`prepare` 交回 `needs_confirm()` 和 `why()`，App 问过用户、同意了 `prepared.approve()` 再 `run`（没同意的 `run` 报 `denied`，不上传）；`pdf_mathpix` 的清单确认是 `never`，`pdf_mathpix_quote` 的结果带 `ask`、`why`。命令行 `tools::terminal_toolkit` 和 App 一样照规矩，不用问的直接执行，记账名「命令行」。钉 engine-core `v0.4.1`（git tag）。
 - **工具层多导出了**：`tools::Toolkit`、`tools::Prepared`（App 不用再直接依赖 engine-core）、`tools::to_openai`、`tools::to_anthropic`。

@@ -1,6 +1,6 @@
 # ROADMAP
 
-最新 tag 为 **v0.7.0**（工具包 + `pdf_find`）。接下来三个 App 照工具包接：Peck 1.4.0（v0.4.0 那一步，Peck 1.3.0 做完后开工）、Pomelo 1.2.0（v0.8.0）、Pith（v0.9.0）。
+最新 tag 为 **v0.8.0**（Pomelo 1.2.0 接完：花钱的规矩和共用账本、转格式、页图画框）。接下来：Peck 1.4.0（v0.4.0 那一步，Peck 1.3.0 做完后开工）、Pith（v0.9.0）。
 
 分工见 `CLAUDE.md`「二」：Codex 实施每个 Phase，本机 Claude 审核、commit、打 tag。1.0.0 = 引擎完成 + 三个 App 都接上并通过验收；engine-core 1.0 同时冻结。
 
@@ -15,7 +15,7 @@
 | v0.5.0 | 页面与结构 + 预览级编辑：目录书签、页标签核对、页面管理、照片打包、拼 PDF、标注、表单、密码、PDF.js 编辑套件、试用页 | engine-pdf | 完成（tag `v0.5.2`） |
 | v0.6.0 | PDFium 级：可搜索扫描件、移动与删除文字图片、涂黑 | engine-pdf | 完成（tag `v0.6.0`） |
 | v0.7.0 | Agent 工具包（清单、调用入口、命令行、接线说明）+ `pdf_find`，钉 engine-core；人用的查找改走 find；开 PDFium 时补连字 | engine-pdf | 完成（tag `v0.7.0`） |
-| v0.8.0 | 接 Pomelo（Pomelo 1.2.0）：换掉 Pomelo 的 PDF 代码、扫描件进知识库、检索带页图、柚子用 `pdf_*` 工具、Pub2MD、见字如面拼 PDF | Pomelo 为主，引擎补 `mathpix::convert` 等 | 进行中：Pomelo Phase 1–2 做完（2026-11-28），引擎没改；Phase 5 补引擎 |
+| v0.8.0 | 接 Pomelo（Pomelo 1.2.0）：换掉 Pomelo 的 PDF 代码、扫描件进知识库、检索带页图、柚子用 `pdf_*` 工具、Pub2MD、见字如面拼 PDF | Pomelo 为主，引擎补 `mathpix::convert` 等 | 完成（tag `v0.8.0`） |
 | v0.9.0 | 接 Pith：取字、Mathpix、页标签、编辑套件进阅读器 | Pith 为主 | 大纲（原 v0.8） |
 | v1.0.0 | 完成体：冻结接口（Rust 和 `web/`），三个 App 钉 v1.0.0，全量回归 | 全部 | 大纲 |
 
@@ -30,6 +30,7 @@
 - **v0.5.0 页面与结构 + 预览级编辑**（tag `v0.5.2`）：写入从 PDFKit 整份重写改成 lopdf 在原对象上写（`decisions/0017`），修好知网论文、带结构树的论文、链接、页标签、表单字典；`sys/objects.rs` 修交叉引用表和缺 `/Length` 的流。
 - **v0.6.0 PDFium 级**：PDFium 改为只读，移动、删除、涂黑由 lopdf 只改那几条指令、交文件前核对（`decisions/0019`）；涂黑支持带结构树和知网论文；可搜索副本换页序、合并后识别文字跟着页走。
 - **v0.7.0 工具包 + pdf_find**（`decisions/0020`、`0021`，design §9）：5 个 Phase（清单草案和字框实验 → 接 engine-core → 调用入口和命令行 → `pdf_find` → 套件查找和收尾）。审核时用 39 份真实 PDF 独立核对字框（PDFium 取框内文字），改了：扫描件盖了页码、水印的页照样识别；engine-core 软连字符后跟空格被拼词（发 engine-core v0.2.1）；开 PDFium 时补 PDFKit 取丢的连字、收紧偏高的中文行框，查找加内存缓存（`decisions/0022`）；`pdf_edit` 的改动单清单写全每种字段；`pdf_read` 加 `max_images`、越界页直接报错；`pdf_find` 的 Markdown 中文不断行、按词时说明是哪几页；`pdf_objects` 带上文字内容；工具层类型挪到 `engine_pdf::tools` 下。
+- **v0.8.0 接 Pomelo**（Pomelo 1.2.0 的 6 个 Phase，本机 Claude 在 Pomelo 的会话里直接改引擎，总仓库 `decisions/0009`）：Mathpix 花钱的规矩和所有 App 共用的账本（后搬进 engine-core v0.4.1 的 `spend`，`decisions/0023`）；`page_box` 把查找的框画到页图上；工具层多导出几个类型；转格式 `mathpix::convert`、Word 按估计页数记账再补、`Submitted::uploaded` 接着跑引擎之前的上传（`decisions/0024`）。Pomelo 里对照 59 份真实 PDF（Phase 1），真跑 Mathpix 13 页（$0.065，记在共用账本）、转格式（Word、PDF、LaTeX、HTML）三十来次，有两次 Mathpix 偶尔报转不出来（Pomelo 那边隔一会儿再要一次）。
 
 ## v0.4.0 接 Peck（Peck 1.4.0，计划）
 
@@ -56,7 +57,7 @@
 | 只选第 8 页识别：确认框、拒绝零请求、只传一页、结果标第 8 页 | `FakeTransport` | 确认框显示第 8 页和 $0.005；点拒绝后没有请求；点允许后结果标第 8 页 |
 | 坏文件、加密文件提示明确；从安装包调用 | 引擎测试 | 正式版里读坏文件、加密文件看提示；读 PDF 时没有 `osascript` 子进程 |
 
-## v0.8.0 接 Pomelo（Pomelo 1.2.0，计划）
+## v0.8.0 接 Pomelo（Pomelo 1.2.0，完成）
 
 依据 `docs/brief-pomelo.md`（目标、调用点、要注意的事）。在 Pomelo 仓库照 Pomelo 的 `CLAUDE.md` 做；开工时 Pomelo 的会话把下表抄进 Pomelo 的 `docs/roadmap.md`。调用点和换法见 design §4.3。
 

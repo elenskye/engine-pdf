@@ -1,37 +1,37 @@
 # HANDOFF
 
-更新于 2026-11-28。**v0.8.0 进行中**（跟着 Pomelo 1.2.0 做，还没打 tag；v0.7.0 已发、已推）。Pomelo 用 `[patch]` 指本机这份开发。
+更新于 2026-11-28。**v0.8.0 已打 tag，等站主推**（跟着 Pomelo 1.2.0 做完；v0.7.0 已发、已推）。Pomelo 现在用 `[patch]` 指本机这份，推上去后改钉 tag `v0.8.0`。
 
-## 这一版（v0.8.0，到现在）
+## 这一版（v0.8.0）
 
-本机 Claude 在 Pomelo 1.2.0 Phase 4 的会话里直接改（总仓库 `decisions/0009`），接口变化记在 `CHANGELOG.md`「v0.8.0（开发中）」：
+本机 Claude 在 Pomelo 1.2.0 的会话里直接改（总仓库 `decisions/0009`），接口变化见 `CHANGELOG.md`「v0.8.0」：
 
-- **Mathpix 花钱的规矩和共用账本**（站主 2026-11-28 定，`decisions/0023`）：一次超过 $0.5 或算不出费用、或所有 App 最近 24 小时合计加上这一次超过 $5 才问。**2026-11-28 下午改用 engine-core v0.4.0 的 `spend`**（引擎都停着时，在总仓库的会话里做的）：`mathpix::spend` 只再导出；工具包照账本定要不要问（`prepare` 的 `needs_confirm()`、`why()`，`call` 经 `Ctx.approve` 问；先弹卡片的 App 同意后 `prepared.approve()` 再 `run`，没同意的 `run` 报 `denied`）；账本 `<底>/engine-pdf/mathpix-ledger.jsonl`（`ENGINE_LEDGER_DIR` 或 `Ledger::At(底)` 改底，`Options::book()` 取）；命令行和 App 一样照规矩。Pomelo 要跟着改几处，见 `CHANGELOG.md`「App 升级要改的」。Peck 1.4.0 原定的「每次弹确认」照新规矩改（`ROADMAP.md` 已注）。
-- **钉 engine-core v0.4.1**（git tag，2026-11-28 已推）。
-- **清理**（总仓库 `decisions/0013`）：`scripts/clean.sh`（engine-core 的 `engine-clean`）和开工钩子；已发版本的中间产物挪进了 `local/runs/v0.5.2/`、`v0.6.0/`、`v0.7.0/`，两套核对程序挪到 `local/checks/edit-redact/`、`local/checks/find-bounds/`；试用页存的副本改写到 `local/runs/v<版本>/studio/`。`check.sh` 开头把 `ENGINE_LEDGER_DIR` 指到临时目录，`web/node_modules` 没有就先装。
-- **页图上画框**：`Document::page_box` + `PageBox::on_image`（四种旋转、CropBox 偏移），App 把 `pdf_find` 的框画到 `render` 的页图上用。
-- **工具层多导出**：`tools::Toolkit`、`Prepared`、`to_openai`、`to_anthropic`（App 不用再直接依赖 engine-core）。
+- **Mathpix 花钱的规矩和共用账本**（`decisions/0023`）：规矩和账本是 engine-core v0.4.1 的 `spend`（钉 git tag），`mathpix::spend` 只再导出；工具包照账本定要不要问，先弹卡片的 App 同意后 `prepared.approve()` 再 `run`。账本 `<底>/engine-pdf/mathpix-ledger.jsonl`。
+- **转格式、Word 的页数、接着跑旧上传**（`decisions/0024`）：`mathpix::convert`（价目表没列，当不收费：不问、不记账；`echo` 也模拟）；`submit_file` 先按估计页数记账、`wait` 按服务报的补；`Submitted::uploaded` 接着跑引擎之前上传的。`echo` 里没字有图的页交回一句模拟的话。
+- **页图上画框**：`Document::page_box` + `PageBox::on_image`。
+- **工具层多导出**：`tools::Toolkit`、`Prepared`、`to_openai`、`to_anthropic`。
 
 ## 验证
 
-- `./scripts/check.sh`：通过（三种配置的测试和 Clippy、Web 检查和测试）。新测试：花钱规矩（单次、24 小时、各 App 合计、写坏的行跳过）、工具层按规矩问和拒绝零请求、真上传进账本而模拟的不进、四种旋转加 CropBox 偏移的框落在字上。
-- 在 Pomelo 里：知网论文（CropBox 和 MediaBox 不同）找「政治效能感」，框正好落在标题那几个字上；Pomelo 的测试覆盖了按规矩出卡片、拒绝不上传。
-- 没做：Mathpix 真跑（上传的代码只多了记账，Pomelo Phase 6 一起真跑）。
+- `./scripts/check.sh`：通过（三种配置的测试和 Clippy、Web 检查和测试）。新测试：转格式（假服务和脚本：格式没好时等、某种失败时别的照样交回）、`Submitted::uploaded` 只发 GET 不记账、Word 先记估计再补一次（存下再等不重复补）、`echo` 的照片页。
+- **Mathpix 真跑**（在 Pomelo 1.2.0 Phase 6，共用账本里记成「Pomelo（测试）」，合计 $0.065）：柚子的 PDF 工具箱识别样本第 8 页的公式（$0.005，没到门槛直接跑）；Pub2MD 整份 10 页样本（$0.05）和两张图（各 $0.005），上传、等、下载、`.mmd.zip` 都对；转格式 Word、PDF、LaTeX、HTML 三十来次都转出来了，只有两次 Mathpix 报某个格式转不出来（隔一会儿同样的内容又能转，Pomelo 那边失败的格式隔 15 秒再要一次）。
+- 在 Pomelo 里：知网论文的框落在字上（Phase 4）；Pub2MD 的模拟流程、按规矩停在上传前、退出后继续不重传、1.1 的半截任务接着跑都有测试。
 
 ## 已知问题
 
 - 不开 `pdfium` 时，连字丢失和偏高的中文框照旧（Peck 不开）。
-- 扫描页上盖的字超过 20 个（JSTOR 那种「This content downloaded from…」）时，`read`、`find` 都当文字页、不识别；要识别得看页面上是不是整页大图，没做。
+- 扫描页上盖的字超过 20 个（JSTOR 那种「This content downloaded from…」）时，`read`、`find` 都当文字页、不识别。
+- Vision 偶尔丢字（样本扫描页把「北面的山脊」读成「北面山脊」），`find` 整句就找不到那一处。
 - 进程里第一次用识别模型要等 16–33 秒（系统的，引擎管不了）；查找的缓存只在进程里。
+- `/v3/converter` 偶尔报某个格式转不出来（`Processing`），过一会儿同样的内容能转；引擎不自己重试，App 决定。
 
 ## 等站主
 
-- 不急：v0.8.0 的提交在本机 `main` 上，打 tag 前推不推都行（Pomelo 现在用本机路径）。
+1. 推 engine-pdf：`main` 和 tag `v0.8.0`（engine-core v0.4.1 已推）。推完 Pomelo 改钉 tag、去掉 `[patch]`。
 
 ## 下一步
 
-- **Peck 1.4.0**：Peck 1.3.0 做完后在 Peck 仓库开工，钉 `v0.7.0`（`ROADMAP.md`「v0.4.0」）。
-- **Pomelo 1.2.0**：Phase 1–4 做完（对照和验收在 Pomelo 的 `docs/roadmap.md`「1.2.0」）。Phase 5 时引擎补 `mathpix::convert` 和从 Pomelo 旧任务接着跑的 `Submitted`（Word 的 `submit_file` 记账要按服务报的页数补记），Phase 6 打 tag `v0.8.0`。
+- **Peck 1.4.0**：Peck 1.3.0 做完后在 Peck 仓库开工，钉 `v0.8.0`（`ROADMAP.md`「v0.4.0」；Mathpix 照新规矩）。
 - **Pith（v0.9.0）**：大纲在 `ROADMAP.md`，开工前细化。
 
 ## Mathpix 真跑
