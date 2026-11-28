@@ -8,13 +8,13 @@ mod write;
 use std::sync::LazyLock;
 
 pub use engine_core::call::{
-    Approve, Attachment, AttachmentContent, Ctx, Files, Keys, Output, Prices, Progress, Quote,
-    ToolError, Usage,
+    Approve, Attachment, AttachmentContent, Ctx, Files, Keys, Output, Prepared, Prices, Progress,
+    Quote, ToolError, Toolkit, Usage,
 };
-pub use engine_core::overrides::{Override, Overrides};
+pub use engine_core::overrides::{Override, Overrides, to_anthropic, to_openai};
 pub use engine_core::tool::{Confirm, ToolSpec};
 
-use engine_core::call::{Handler, Toolkit};
+use engine_core::call::Handler;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use zeroize::Zeroizing;
