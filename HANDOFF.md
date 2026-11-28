@@ -30,12 +30,11 @@ Codex 实施 Phase 1–5，本机 Claude 审核两轮后改了（详见 `ROADMAP
 ## 等站主
 
 - push engine-pdf：`cd ~/Documents/GitHub/personal-engine-studio/engine-pdf && git push origin main --tags`
-- 看一眼 `ROADMAP.md` 的 Pomelo 1.2.0 计划（照你的十条写的），批了 Pomelo 的会话就能开工。
 
 ## 下一步
 
 - **Peck 1.4.0**：Peck 1.3.0 做完后在 Peck 仓库开工，钉 `v0.7.0`（`ROADMAP.md`「v0.4.0」）。
-- **Pomelo 1.2.0**：计划批了后开工；到 Phase 5 时引擎补 `mathpix::convert` 和旧任务续跑，发 v0.8.0。
+- **Pomelo 1.2.0**：Phase 1（换底层）、2（扫描件进知识库）在 Pomelo 仓库做完（2026-11-28，钉 `v0.7.0`、开 `pdfium`，引擎没改），对照和验收写在 Pomelo 的 `docs/roadmap.md`「1.2.0」。到 Phase 5 时引擎补 `mathpix::convert` 和旧任务续跑，发 v0.8.0。
 - **Pith（v0.9.0）**：大纲在 `ROADMAP.md`，开工前细化。
 
 ## Mathpix 真跑

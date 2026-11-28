@@ -15,7 +15,7 @@
 | v0.5.0 | 页面与结构 + 预览级编辑：目录书签、页标签核对、页面管理、照片打包、拼 PDF、标注、表单、密码、PDF.js 编辑套件、试用页 | engine-pdf | 完成（tag `v0.5.2`） |
 | v0.6.0 | PDFium 级：可搜索扫描件、移动与删除文字图片、涂黑 | engine-pdf | 完成（tag `v0.6.0`） |
 | v0.7.0 | Agent 工具包（清单、调用入口、命令行、接线说明）+ `pdf_find`，钉 engine-core；人用的查找改走 find；开 PDFium 时补连字 | engine-pdf | 完成（tag `v0.7.0`） |
-| v0.8.0 | 接 Pomelo（Pomelo 1.2.0）：换掉 Pomelo 的 PDF 代码、扫描件进知识库、检索带页图、柚子用 `pdf_*` 工具、Pub2MD、见字如面拼 PDF | Pomelo 为主，引擎补 `mathpix::convert` 等 | 计划已改（2026-11-27），等批 |
+| v0.8.0 | 接 Pomelo（Pomelo 1.2.0）：换掉 Pomelo 的 PDF 代码、扫描件进知识库、检索带页图、柚子用 `pdf_*` 工具、Pub2MD、见字如面拼 PDF | Pomelo 为主，引擎补 `mathpix::convert` 等 | 进行中：Pomelo Phase 1–2 做完（2026-11-28），引擎没改；Phase 5 补引擎 |
 | v0.9.0 | 接 Pith：取字、Mathpix、页标签、编辑套件进阅读器 | Pith 为主 | 大纲（原 v0.8） |
 | v1.0.0 | 完成体：冻结接口（Rust 和 `web/`），三个 App 钉 v1.0.0，全量回归 | 全部 | 大纲 |
 

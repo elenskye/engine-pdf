@@ -57,7 +57,7 @@ curl -fL https://github.com/libviprs/libviprs-dep/releases/download/pdfium-8085/
 ./scripts/check.sh
 ```
 
-在其他目录准备了静态库时，将 `PDFIUM_STATIC_LIB_PATH` 指向 `libpdfium.a` 所在的绝对路径。App 开启 `pdfium` 时同样使用该环境变量，具体见 `docs/decisions/0010`。
+在其他目录准备了静态库时，将 `PDFIUM_STATIC_LIB_PATH` 指向 `libpdfium.a` 所在的绝对路径。App 开启 `pdfium` 时同样使用该环境变量，具体见 `docs/decisions/0010`；App 用 `cp -c` 把这里的 `local/pdfium/` 克隆（APFS，不多占空间）到自己不进 Git 的文件夹，在 `.cargo/config.toml` 的 `[env]` 里指过去（站主 2026-11-28 定，Pomelo 的 `scripts/pdfium.sh` 是例子）。
 
 ## 本地试用页
 
