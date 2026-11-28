@@ -504,3 +504,191 @@ fn every_real_upload_goes_into_the_shared_ledger_and_simulated_ones_do_not() {
     mathpix::run(&doc, &quote, &keys, &echo, &Cancel::new(), &|_| {}).unwrap();
     assert_eq!(book.entries(std::time::UNIX_EPOCH).len(), 1);
 }
+
+#[test]
+fn converts_mmd_with_the_fake_and_waits_for_files_not_ready_yet() {
+    let keys = Keys::new("mock-id", "mock-key");
+    let cancel = Cancel::new();
+    // the echo: every format comes back as a file of that kind; nothing is recorded
+    let echo = Options {
+        transport: Arc::new(FakeTransport::echo()),
+        ..quiet()
+    };
+    let out = mathpix::convert(
+        "\\section*{Title}\n\nBody \\(x^2\\).",
+        &["docx", "pdf", "tex.zip", "html.zip", "docx"],
+        &keys,
+        &echo,
+        &cancel,
+    )
+    .unwrap();
+    let heads: Vec<(&str, Vec<u8>)> = out
+        .iter()
+        .map(|c| (c.format.as_str(), c.result.as_ref().unwrap()[..4].to_vec()))
+        .collect();
+    assert_eq!(
+        heads,
+        [
+            ("docx", b"PK\x03\x04".to_vec()),
+            ("pdf", b"%PDF".to_vec()),
+            ("tex.zip", b"PK\x03\x04".to_vec()),
+            ("html.zip", b"PK\x03\x04".to_vec()),
+        ]
+    );
+    let docx = out[0].result.as_ref().unwrap();
+    let mut xml = String::new();
+    zip::ZipArchive::new(Cursor::new(docx))
+        .unwrap()
+        .by_name("word/document.xml")
+        .unwrap()
+        .read_to_string(&mut xml)
+        .unwrap();
+    assert!(xml.contains("Body \\(x^2\\)."), "{xml}");
+    assert!(matches!(
+        mathpix::convert("x", &["exe"], &keys, &echo, &cancel),
+        Err(Error::Mathpix(e)) if e.kind == MathpixErrorKind::InvalidOptions
+    ));
+    // scripted: one format still processing, then a file that answers 202 once; the other one fails
+    let fake = Arc::new(FakeTransport::scripted([
+        reply(200, r#"{"conversion_id":"conv-1"}"#),
+        reply(
+            200,
+            r#"{"status":"processing","conversion_status":{"docx":{"status":"processing"},"pdf":{"status":"error"}}}"#,
+        ),
+        reply(
+            200,
+            r#"{"status":"completed","conversion_status":{"docx":{"status":"completed"},"pdf":{"status":"error"}}}"#,
+        ),
+        reply(202, r#"{"status":"processing"}"#),
+        reply(200, b"PK\x03\x04docx".to_vec()),
+    ]));
+    let options = Options {
+        transport: fake.clone(),
+        poll_interval: Duration::from_millis(1),
+        ..quiet()
+    };
+    let out = mathpix::convert("Body", &["docx", "pdf"], &keys, &options, &cancel).unwrap();
+    assert_eq!(out[0].result.as_ref().unwrap(), b"PK\x03\x04docx");
+    assert!(
+        matches!(&out[1].result, Err(Error::Mathpix(e)) if e.kind == MathpixErrorKind::Processing)
+    );
+    let requests = fake.requests();
+    assert_eq!(requests[0].path, "/v3/converter");
+    assert_eq!(
+        requests[0].content_type.as_deref(),
+        Some("application/json")
+    );
+    let sent: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(
+        sent["formats"],
+        serde_json::json!({"docx": true, "pdf": true})
+    );
+    assert_eq!(sent["metadata"]["improve_mathpix"], false);
+    assert_eq!(requests[4].path, "/v3/converter/conv-1.docx");
+}
+
+#[test]
+fn an_upload_made_before_the_engine_goes_on_without_uploading_again() {
+    use mathpix::spend::Ledger;
+    let dir = std::env::temp_dir().join(format!("engine-pdf-uploaded-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let fake = Arc::new(FakeTransport::scripted([
+        reply(200, r#"{"status":"completed","num_pages":2}"#),
+        reply(200, "One\n\\pagebreak\nTwo\n\\pagebreak\n"),
+    ]));
+    let options = Options {
+        transport: fake.clone(),
+        ledger: Ledger::At(dir.clone()),
+        app: "Pomelo".into(),
+        ..quiet()
+    };
+    let keys = Keys::new("fixture-id", "fixture-key");
+    let cancel = Cancel::new();
+    assert!(Submitted::uploaded("../x", Some(2), &options).is_err());
+    let mut submitted = Submitted::uploaded("2026_11_20-old", Some(2), &options).unwrap();
+    assert_eq!(
+        (submitted.pages_sent(), submitted.page_map()),
+        (2, &[1, 2][..])
+    );
+    mathpix::wait(&mut submitted, &keys, &options, &cancel, &|_| {}).unwrap();
+    let recognized = mathpix::fetch(&submitted, &keys, &options, &cancel).unwrap();
+    assert_eq!(
+        recognized.pages.iter().map(|p| p.index).collect::<Vec<_>>(),
+        [1, 2]
+    );
+    assert!(fake.requests().iter().all(|r| r.method == Method::Get));
+    // the old upload isn't in the ledger, and isn't added now
+    assert!(options.book().entries(std::time::UNIX_EPOCH).is_empty());
+    let word = Submitted::uploaded("2026_11_20-word", None, &options).unwrap();
+    assert!(word.page_map().is_empty() && word.pages_sent() == 0);
+}
+
+#[test]
+fn a_word_upload_is_recorded_by_its_estimate_then_topped_up_to_the_reported_pages() {
+    use mathpix::spend::Ledger;
+    let dir = std::env::temp_dir().join(format!("engine-pdf-word-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let fake = Arc::new(FakeTransport::scripted([
+        reply(200, ACCEPTED),
+        reply(200, r#"{"status":"completed","num_pages":7}"#),
+        reply(200, r#"{"status":"completed","num_pages":7}"#),
+    ]));
+    let options = Options {
+        transport: fake,
+        ledger: Ledger::At(dir.clone()),
+        app: "Pomelo".into(),
+        ..quiet()
+    };
+    let keys = Keys::new("fixture-id", "fixture-key");
+    let cancel = Cancel::new();
+    let mut submitted = mathpix::submit_file(
+        b"docx bytes",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        Some(4),
+        &keys,
+        &options,
+        &cancel,
+    )
+    .unwrap();
+    let book = options.book();
+    let units = |book: &mathpix::spend::Book| {
+        book.entries(std::time::UNIX_EPOCH)
+            .iter()
+            .map(|e| (e.units, e.estimated))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(units(&book), [(4.0, true)]);
+    mathpix::wait(&mut submitted, &keys, &options, &cancel, &|_| {}).unwrap();
+    assert_eq!(units(&book), [(4.0, true), (3.0, false)]);
+    // saved and waited on again (继续): topped up once only
+    let mut again: Submitted =
+        serde_json::from_str(&serde_json::to_string(&submitted).unwrap()).unwrap();
+    mathpix::wait(&mut again, &keys, &options, &cancel, &|_| {}).unwrap();
+    assert_eq!(units(&book).len(), 2);
+    assert!((book.spent(std::time::SystemTime::now()) - 0.035).abs() < 1e-9);
+}
+
+#[test]
+fn the_echo_says_something_for_a_photo_page() {
+    let keys = Keys::new("mock-id", "mock-key");
+    let cancel = Cancel::new();
+    let options = Options {
+        transport: Arc::new(FakeTransport::echo()),
+        ..quiet()
+    };
+    let png = {
+        let doc = Document::from_bytes(&Sample::Mixed.generate().unwrap()).unwrap();
+        doc.render(1, ImageFormat::Png, 200).unwrap().bytes
+    };
+    let photo =
+        engine_pdf::compose::images(&[engine_pdf::compose::ImageSource::Bytes(&png)], &cancel)
+            .unwrap();
+    let doc = Document::from_bytes(&photo).unwrap();
+    let quote = mathpix::quote(&doc, &[1]).unwrap();
+    let recognized = mathpix::run(&doc, &quote, &keys, &options, &cancel, &|_| {}).unwrap();
+    assert!(
+        recognized.mmd.contains("第 1 页是图片"),
+        "{}",
+        recognized.mmd
+    );
+}

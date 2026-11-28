@@ -1,5 +1,6 @@
 //! Mathpix 文档识别。先本地报价，照花钱的规矩（`spend`）要问时问过再提交。
 
+mod convert;
 #[cfg(feature = "fake")]
 mod fake;
 mod job;
@@ -16,6 +17,7 @@ use zeroize::Zeroizing;
 
 use crate::{Document, Error};
 
+pub use convert::{CONVERT_FORMATS, Converted, MAX_CONVERT_BYTES, convert};
 #[cfg(feature = "fake")]
 pub use fake::*;
 pub use job::{delete, fetch, run, submit, submit_file, wait};
@@ -31,6 +33,7 @@ pub(crate) const SERVICE: &str = "Mathpix";
 pub(crate) const UNIT: &str = "page";
 const BASE: &str = "https://api.mathpix.com";
 const PDF_PATH: &str = "/v3/pdf";
+const CONVERTER_PATH: &str = "/v3/converter";
 
 /// Mathpix 认证信息。丢弃时清除字符串，调试输出隐藏密钥。
 #[derive(Clone)]
@@ -216,6 +219,9 @@ pub struct Submitted {
     options: SubmittedOptions,
     #[serde(default)]
     num_pages: Option<u32>,
+    /// 账已经按服务报的页数补过（Word 上传时只记了估计；PDF 上传时就记准了）。
+    #[serde(default)]
+    settled: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -228,6 +234,29 @@ struct SubmittedOptions {
 }
 
 impl Submitted {
+    /// 用引擎之前（如 Pomelo 1.2 以前）就上传了的整份文件接着等、下载：`pages` 是那份 PDF 的页数，
+    /// Word 为 `None`。那次上传不在账本里，这里也不补记；按 `opts` 的价格和下载设置。
+    pub fn uploaded(pdf_id: &str, pages: Option<u32>, opts: &Options) -> Result<Self, Error> {
+        validate_price(opts.price_per_page)?;
+        if !valid_id(pdf_id) || pages == Some(0) {
+            return Err(MathpixErrorKind::InvalidOptions.into());
+        }
+        Ok(Self {
+            pdf_id: pdf_id.into(),
+            page_map: pages.map_or_else(Vec::new, |n| (1..=n).collect()),
+            pages_sent: pages.unwrap_or_default(),
+            options: SubmittedOptions {
+                price_per_page: opts.price_per_page,
+                lines: opts.lines,
+                mmd_zip: opts.mmd_zip,
+                base: opts.base.clone(),
+                simulated: opts.transport.is_simulated(),
+            },
+            num_pages: None,
+            settled: true,
+        })
+    }
+
     pub fn pdf_id(&self) -> &str {
         &self.pdf_id
     }

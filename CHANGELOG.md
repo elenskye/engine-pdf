@@ -6,6 +6,10 @@
 
 - **Mathpix 花钱的规矩和共用账本**（`decisions/0023`，总仓库 `decisions/0011`）：规矩和账本是 engine-core v0.4.0 的 `spend`，`mathpix::spend` 只再导出（`Ledger`、`Book`、`Entry`、`Why`，`ASK_ABOVE_USD` $0.5、`DAY_LIMIT_USD` $5、`WINDOW` 24 小时）。`mathpix::Options` 多了 `ledger`（默认共用账本）、`app` 和 `book()`（Mathpix 这一份账）；每次真正上传记一行到 `<底>/engine-pdf/mathpix-ledger.jsonl`。工具包照同一份账本定要不要问：`toolkit.call` 要问时经 `Ctx.approve` 问，`prepare` 交回 `needs_confirm()` 和 `why()`，App 问过用户、同意了 `prepared.approve()` 再 `run`（没同意的 `run` 报 `denied`，不上传）；`pdf_mathpix` 的清单确认是 `never`，`pdf_mathpix_quote` 的结果带 `ask`、`why`。命令行 `tools::terminal_toolkit` 和 App 一样照规矩，不用问的直接执行，记账名「命令行」。钉 engine-core `v0.4.1`（git tag）。
 - **工具层多导出了**：`tools::Toolkit`、`tools::Prepared`（App 不用再直接依赖 engine-core）、`tools::to_openai`、`tools::to_anthropic`。
+- **转格式**（`decisions/0024`）：`mathpix::convert(mmd, formats, keys, opts, cancel)` 把 MMD 交给 `/v3/converter`，等每种格式转好、逐个下载，交回 `Vec<Converted>`（某种没转成的写在它自己的 `result` 里）；格式见 `CONVERT_FORMATS`（docx、pdf、latex.pdf、tex.zip、html.zip、md.zip、pptx），请求体上限 `MAX_CONVERT_BYTES`。Mathpix 价目表没列这一项：不报价、不问、不记账。`FakeTransport::echo` 也模拟它。
+- **Word 记账**：`submit_file` 上传时按传入的估计页数记一笔（`estimated`），`wait` 拿到服务报的页数后补记多出来的（只补一次，记在 `Submitted` 里）。
+- **接着跑别处上传的**：`Submitted::uploaded(pdf_id, pages, opts)`，用 App 自己存的 `pdf_id`（整份 PDF 的页数，Word 为 `None`）接着 `wait`、`fetch`，不补记账。
+- **模拟服务**：`echo` 里没有字、有图的页交回「（模拟识别：第 n 页是图片）」，空白页仍是空的。
 - **页图上画框**：`Document::page_box(page)` 交回 CropBox 和旋转，`PageBox::on_image(&rect)` 把查找、OCR 的框（PDF 坐标）换成 `render` 页图上的位置（左上原点、按宽高比例），四种旋转和 CropBox 偏移都对。
 - **App 升级要改的**：用字面量建 `mathpix::Options` 的要补 `ledger`、`app`（或 `..Default::default()`）；开发版和测试设 `ledger: Ledger::At(底)` 或 `Ledger::Off`，别写进共用账本——`At` 给的是底目录，账本在它下面的 `engine-pdf/mathpix-ledger.jsonl`；判断要不要问用 `prepare` 交回的 `needs_confirm()` / `why()`（或 `options.book().approval(Some(usd))`），`Ledger` 自己不再有 `approval`、`record`、`entries`，这些在 `Book` 上；`Entry` 的 `pages` 换成 `unit`、`units`，多了 `estimated`；`Approve` 只在规矩要求、且走 `toolkit.call` 时被问；先 `prepare` 再 `run` 的，用户同意后要 `prepared.approve()`。
 

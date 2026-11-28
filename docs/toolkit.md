@@ -1,6 +1,6 @@
 # 工具包接线说明
 
-适用 engine-pdf v0.7.0。每个工具的参数、结果、错误、费用、确认和例子在 `tools/*.json`，总览见 [design §9](design.md#9-agent-工具包和-pdf_findv070)。页码一律是原文件的物理页码（从 1 起），页标签另给；坐标单位 pt、左下原点、含 CropBox 偏移。
+适用 engine-pdf v0.8.0。每个工具的参数、结果、错误、费用、确认和例子在 `tools/*.json`，总览见 [design §9](design.md#9-agent-工具包和-pdf_findv070)。页码一律是原文件的物理页码（从 1 起），页标签另给；坐标单位 pt、左下原点、含 CropBox 偏移。
 
 ## Rust
 
@@ -53,6 +53,10 @@ App 在自己的界面里把 `pdf_find` 的框画到页图上：`Document::page_
 - `pdf_objects`、`pdf_redact` 要 `pdfium` feature；没开时照样列出，调用报 `pdfium_unavailable`。
 - `pdf_mathpix` 只上传确认过的那几页（升序去重）、不上传加密 PDF；报价和执行之间 App 要保持同一份文件内容。
 - **花钱的规矩和账本**（engine-core `spend`，这里再导出成 `mathpix::spend`；总仓库 GUIDE「五」）：工具包照账本定要不要问——`toolkit.call` 要问时经 `Ctx.approve` 问（不同意就一个请求都不发）；先弹卡片再执行的 App 用 `prepare` 交回的 `needs_confirm()` 和原因 `why()`，用户同意后 `run(prepared.approve(), …)`（要确认却没 `approve` 的报 `denied`，一个请求都不发）。`pdf_mathpix_quote` 的结果带 `ask`、`why`。每次真正上传记一行进所有 App 共用的账本 `<底>/engine-pdf/mathpix-ledger.jsonl`（底默认 `~/Library/Application Support`，`ENGINE_LEDGER_DIR` 可改；模拟的传输不记），App 用 `Options.app` 写上自己的名字，用 `Options::book().entries(起点)` 读来报告。开发版和测试设 `Options.ledger` 为 `Ledger::At(底)`（下面是同样的 `engine-pdf/mathpix-ledger.jsonl`）或 `Ledger::Off`；`toolkit_with_mathpix` 把同一份交给工具包。
+
+## Mathpix 的 Rust 接口（App 自己的流程）
+
+不经工具包、自己排流程的（Pomelo 的 Pub2MD）：`mathpix::quote_with_options` 报价 → `options.book().approval(Some(usd))`（Word 的页数算不出时传 `None`）定要不要问 → `submit` / `submit_file`，把 `Submitted` 马上存下 → `wait`（Word 在这里按服务报的页数补记账）→ `fetch`；`delete` 由 App 定什么时候调。`Submitted::uploaded` 接着跑引擎之前上传的。转格式用 `mathpix::convert`（不收费，不经账本）。账本只由引擎记，App 不另记。
 
 ## 命令行
 

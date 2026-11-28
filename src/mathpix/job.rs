@@ -124,6 +124,8 @@ fn upload(
             .unwrap_or_else(|| MathpixErrorKind::InvalidResponse.into())
             .into());
     };
+    // Word 的页数要等服务报了才知道：上传时先按估计记，`wait` 再补
+    let estimated = page_map.is_empty();
     let submitted = Submitted {
         pdf_id: pdf_id.into(),
         page_map,
@@ -136,20 +138,10 @@ fn upload(
             simulated: opts.transport.is_simulated(),
         },
         num_pages: None,
+        settled: !estimated,
     };
     // 拿到任务就算花了（之后失败也收费）：记进所有 App 共用的账本，记不上不挡识别
-    if !opts.transport.is_simulated() {
-        let _ = opts.book().record_usage(
-            &opts.app,
-            &engine_core::call::Usage {
-                service: super::SERVICE.into(),
-                unit: super::UNIT.into(),
-                units: f64::from(pages_sent),
-                usd: f64::from(pages_sent) * price_per_page,
-                estimated: false,
-            },
-        );
-    }
+    record(opts, pages_sent, price_per_page, estimated);
     if let Some(error) = error {
         let mut failure = submitted.failure(error);
         failure.usage.remote_deleted = Some(delete(&submitted, keys, opts));
@@ -190,6 +182,7 @@ pub fn wait(
             match body["status"].as_str() {
                 Some("error") => return Err(MathpixErrorKind::Processing.into()),
                 Some("completed") => {
+                    settle(submitted, opts);
                     progress(report);
                     cancel.check()?;
                     return Ok(());
@@ -305,14 +298,44 @@ pub fn run(
     outcome
 }
 
-fn remaining(start: Instant, max_wait: Duration) -> Result<Duration, Error> {
+/// 记一笔真花的钱（模拟的不记）。
+fn record(opts: &Options, pages: u32, price_per_page: f64, estimated: bool) {
+    if !opts.transport.is_simulated() {
+        let _ = opts.book().record_usage(
+            &opts.app,
+            &engine_core::call::Usage {
+                service: super::SERVICE.into(),
+                unit: super::UNIT.into(),
+                units: f64::from(pages),
+                usd: f64::from(pages) * price_per_page,
+                estimated,
+            },
+        );
+    }
+}
+
+/// Word 识别完：服务报的页数比上传时估的多，补记差额（只补一次；估多了不退）。
+fn settle(submitted: &mut Submitted, opts: &Options) {
+    if submitted.settled || submitted.options.simulated {
+        return;
+    }
+    submitted.settled = true;
+    if let Some(reported) = submitted.num_pages {
+        let extra = reported.saturating_sub(submitted.pages_sent);
+        if extra > 0 {
+            record(opts, extra, submitted.options.price_per_page, false);
+        }
+    }
+}
+
+pub(super) fn remaining(start: Instant, max_wait: Duration) -> Result<Duration, Error> {
     max_wait
         .checked_sub(start.elapsed())
         .filter(|left| !left.is_zero())
         .ok_or_else(|| MathpixErrorKind::Timeout.into())
 }
 
-fn pause(
+pub(super) fn pause(
     start: Instant,
     max_wait: Duration,
     duration: Duration,
